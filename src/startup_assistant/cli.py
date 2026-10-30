@@ -7,6 +7,7 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 
 from startup_assistant.agent import Assistant, auth_mode
@@ -56,8 +57,12 @@ async def _repl(console: Console, data_dir: Path, model: str | None) -> None:
                 break
             try:
                 reply = await assistant.handle(text)
+            except KeyboardInterrupt:
+                console.print("Interrupted", markup=False)
+                continue
             except Exception as exc:  # model/SDK failure must not kill the session
-                console.print(f"[red]Error:[/] {type(exc).__name__}: {exc}", highlight=False)
+                msg = escape(f"{type(exc).__name__}: {exc}")
+                console.print(f"[red]Error:[/] {msg}", highlight=False)
                 continue
             render_reply(console, reply)
 

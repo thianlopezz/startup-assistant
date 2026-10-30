@@ -11,11 +11,13 @@ Every turn is appended to examples/transcript.md.
 
 import argparse
 import asyncio
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 from rich.console import Console
+from rich.markup import escape
 
 from startup_assistant.agent import Assistant, auth_mode
 from startup_assistant.briefs import BriefStore
@@ -26,6 +28,8 @@ from startup_assistant.knowledge import KnowledgeStore
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = ROOT / "examples" / "demo-data"
 DEFAULT_TRANSCRIPT = ROOT / "examples" / "transcript.md"
+FAKE_DATA_DIR = ROOT / "examples" / "fake-data"
+FAKE_TRANSCRIPT = ROOT / "examples" / "fake-transcript.md"
 
 FOUNDER_UPDATE = (
     "We're shifting our target to B2B software companies with 100–500 employees. The buyer is the "
@@ -46,6 +50,11 @@ PHASE2 = ["Show me the latest campaign brief."]
 
 
 # --------------------------------------------------------------------------- transcript
+
+
+def _err(exc: BaseException) -> str:
+    """Exception text made safe to print through rich markup."""
+    return escape(f"{type(exc).__name__}: {exc}")
 
 
 def turn_marker(n: int) -> str:
@@ -194,7 +203,7 @@ async def run_turns(
             reply = await assistant.handle(text)
         except Exception as exc:
             errors += 1
-            console.print(f"[red]Error:[/] {type(exc).__name__}: {exc}", highlight=False)
+            console.print(f"[red]Error:[/] {_err(exc)}", highlight=False)
             entry = format_error(n, text, exc)
         else:
             render_reply(console, reply)
@@ -232,7 +241,7 @@ def run_phase(args: argparse.Namespace, console: Console, phase: int) -> int:
     try:
         return asyncio.run(go())
     except Exception as exc:  # startup failure (auth, SDK)
-        console.print(f"[red]Phase {phase} failed to run:[/] {type(exc).__name__}: {exc}")
+        console.print(f"[red]Phase {phase} failed to run:[/] {_err(exc)}")
         return 1
 
 
@@ -318,8 +327,11 @@ def run_checks(
         marker = turn_marker(len(PHASE1) + 1)
         if marker not in transcript_text:
             return False, f"transcript has no {marker!r}"
-        section = transcript_text.split(marker, 1)[1]
-        return v2.markdown in section, "phase-2 turn compared with stored v2 markdown"
+        section = transcript_text.rsplit(marker, 1)[-1]
+        # Only artifact fences count: the brief must have been printed from the store,
+        # not pasted into the model's reply text.
+        fences = re.findall(r"~~~~markdown\n(.*?)\n~~~~", section, flags=re.S)
+        return v2.markdown in fences, "phase-2 artifact compared with stored v2 markdown"
 
     check("v1 exists, created, knowledge v0, email <= 150 words", v1_ok)
     check("knowledge v1: buyer is Customer Success, pricing restricted", knowledge_ok)
@@ -336,12 +348,13 @@ def run_check_mode(console: Console, args: argparse.Namespace) -> int:
         text = args.transcript.read_text(encoding="utf-8") if args.transcript.exists() else ""
         results = run_checks(knowledge, briefs, text)
     except Exception as exc:
-        console.print(f"[red]FAIL[/] could not open stores: {type(exc).__name__}: {exc}")
+        console.print(f"[red]FAIL[/] could not open stores: {_err(exc)}")
         return 1
     console.rule("[bold]Checks[/]")
     for name, ok, detail in results:
         tag = "[green]PASS[/]" if ok else "[red]FAIL[/]"
-        console.print(f"{tag} {name}" + (f"  ({detail})" if detail else ""), highlight=False)
+        tail = f"  ({escape(detail)})" if detail else ""
+        console.print(f"{tag} {escape(name)}{tail}", highlight=False)
     failed = sum(1 for _, ok, _ in results if not ok)
     console.print(f"{len(results) - failed}/{len(results)} checks passed")
     return 1 if failed else 0
@@ -352,13 +365,20 @@ def run_check_mode(console: Console, args: argparse.Namespace) -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
+    p.add_argument("--data-dir", type=Path, default=None,
+                   help=f"default: {DEFAULT_DATA_DIR} (examples/fake-data with --fake)")
     p.add_argument("--phase", choices=["1", "2", "all"], default="all")
     p.add_argument("--check", action="store_true", help="verify the saved data afterwards")
     p.add_argument("--fake", action="store_true", help="canned replies instead of the model")
     p.add_argument("--model", default=None)
-    p.add_argument("--transcript", type=Path, default=DEFAULT_TRANSCRIPT)
-    return p.parse_args(argv)
+    p.add_argument("--transcript", type=Path, default=None,
+                   help=f"default: {DEFAULT_TRANSCRIPT} (examples/fake-transcript.md with --fake)")
+    args = p.parse_args(argv)
+    if args.data_dir is None:
+        args.data_dir = FAKE_DATA_DIR if args.fake else DEFAULT_DATA_DIR
+    if args.transcript is None:
+        args.transcript = FAKE_TRANSCRIPT if args.fake else DEFAULT_TRANSCRIPT
+    return args
 
 
 def main(argv: list[str] | None = None) -> int:

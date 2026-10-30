@@ -89,3 +89,24 @@ def test_repl_exits_on_eof(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, "auth_mode", lambda: "api-key")
     monkeypatch.setattr("builtins.input", raise_eof)
     assert cli.main(["--data-dir", str(tmp_path / "d")]) == 0
+
+
+class _BracketAssistant(_FakeAssistant):
+    async def handle(self, text):
+        if text == "boom":
+            raise RuntimeError("bad [/usr/bin/claude] path")
+        if text == "intr":
+            raise KeyboardInterrupt
+        return await super().handle(text)
+
+
+def test_repl_survives_markup_in_error_and_interrupt(monkeypatch, tmp_path, capsys):
+    inputs = iter(["boom", "intr", "hi", "quit"])
+    monkeypatch.setattr(cli, "Assistant", _BracketAssistant)
+    monkeypatch.setattr(cli, "auth_mode", lambda: "claude-session")
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(inputs))
+    assert cli.main(["--data-dir", str(tmp_path / "d")]) == 0
+    out = capsys.readouterr().out
+    assert "bad [/usr/bin/claude] path" in out
+    assert "Interrupted" in out
+    assert "echo hi" in out
