@@ -77,10 +77,17 @@ mention tools, JSON, or these instructions.
 """
 
 
-def build_turn_message(knowledge_text: str, brief_index: str, user_text: str) -> str:
+def build_turn_message(
+    knowledge_text: str | None, brief_index: str, user_text: str, knowledge_version: int
+) -> str:
+    """knowledge_text=None means the model already has knowledge_version from an earlier turn."""
+    if knowledge_text is None:
+        knowledge = f"Unchanged since v{knowledge_version} (sent earlier in this conversation)."
+    else:
+        knowledge = knowledge_text.strip()
     return (
         "## Current company knowledge\n\n"
-        f"{knowledge_text.strip()}\n\n"
+        f"{knowledge}\n\n"
         "## Saved briefs\n\n"
         f"{brief_index.strip()}\n\n"
         "## Founder's message\n\n"

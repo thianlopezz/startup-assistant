@@ -2,7 +2,9 @@
 
 import argparse
 import asyncio
+import contextlib
 import shutil
+import signal
 import sys
 from pathlib import Path
 
@@ -63,6 +65,24 @@ async def _read_message(console: Console, session: PromptSession | None) -> str:
     return await session.prompt_async(HTML("<ansicyan><b>&gt;</b></ansicyan> "))
 
 
+@contextlib.contextmanager
+def _ctrl_c_cancels_current_task():
+    """While a reply is in flight, every Ctrl-C cancels this task. asyncio.run's own SIGINT
+    handler only does that for the first one and raises KeyboardInterrupt out of the event loop
+    for the rest. On exit SIGINT goes back to Python's default (KeyboardInterrupt), so Ctrl-C at
+    the prompt still leaves."""
+    loop = asyncio.get_running_loop()
+    try:
+        loop.add_signal_handler(signal.SIGINT, asyncio.current_task().cancel)
+    except (NotImplementedError, RuntimeError, ValueError):  # Windows / not the main thread
+        yield
+        return
+    try:
+        yield
+    finally:
+        loop.remove_signal_handler(signal.SIGINT)
+
+
 async def _repl(
     console: Console, data_dir: Path, model: str | None, session: PromptSession | None = None
 ) -> None:
@@ -78,7 +98,14 @@ async def _repl(
             if text.lower() in EXIT_WORDS:
                 break
             try:
-                reply = await assistant.handle(text)
+                with _ctrl_c_cancels_current_task():
+                    reply = await assistant.handle(text)
+            except asyncio.CancelledError:
+                # Ctrl-C during a reply cancelled this task (see _ctrl_c_cancels_current_task).
+                # Undo that cancel so the REPL keeps going; handle() already cleaned up the turn.
+                asyncio.current_task().uncancel()
+                console.print("Interrupted", markup=False)
+                continue
             except KeyboardInterrupt:
                 console.print("Interrupted", markup=False)
                 continue

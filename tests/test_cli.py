@@ -1,5 +1,10 @@
+import asyncio
+import os
+import signal
+import threading
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
 from startup_assistant import cli
@@ -120,6 +125,55 @@ def test_repl_survives_markup_in_error_and_interrupt(monkeypatch, tmp_path, caps
     assert "echo hi" in out
 
 
+class _CancelOnceAssistant(_FakeAssistant):
+    """Ctrl-C during a reply: asyncio.run's SIGINT handler cancels the task awaiting handle()."""
+
+    async def handle(self, text):
+        if text == "slow":
+            raise asyncio.CancelledError
+        return await super().handle(text)
+
+
+def test_repl_cancelled_turn_continues(monkeypatch, tmp_path, capsys):
+    inputs = iter(["slow", "hi", "quit"])
+    monkeypatch.setattr(cli, "Assistant", _CancelOnceAssistant)
+    monkeypatch.setattr(cli, "auth_mode", lambda: "claude-session")
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(inputs))
+    assert cli.main(["--data-dir", str(tmp_path / "d")]) == 0
+    out = capsys.readouterr().out
+    assert "Interrupted" in out
+    assert out.index("Interrupted") < out.index("echo hi")
+
+
+class _SigintAssistant(_FakeAssistant):
+    """A slow reply that a real Ctrl-C (SIGINT from another thread) arrives during."""
+
+    async def handle(self, text):
+        if text == "slow":
+            threading.Timer(0.05, os.kill, (os.getpid(), signal.SIGINT)).start()
+            await asyncio.sleep(5)
+            return Reply(text="slow reply was not interrupted")
+        return await super().handle(text)
+
+
+def test_repl_real_sigint_cancels_each_turn(monkeypatch, tmp_path, capsys):
+    # asyncio.run only turns the first SIGINT into a cancel; later ones raise
+    # KeyboardInterrupt out of the event loop. Every Ctrl-C during a reply must cancel it.
+    inputs = iter(["slow", "slow", "slow", "hi", "quit"])
+    monkeypatch.setattr(cli, "Assistant", _SigintAssistant)
+    monkeypatch.setattr(cli, "auth_mode", lambda: "claude-session")
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(inputs))
+    try:
+        rc = cli.main(["--data-dir", str(tmp_path / "d")])
+    except KeyboardInterrupt:
+        pytest.fail("a Ctrl-C during a reply escaped the REPL")
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.count("Interrupted") == 3
+    assert "not interrupted" not in out
+    assert "echo hi" in out
+
+
 class _RecordingAssistant(_FakeAssistant):
     received: list[str] = []
 
@@ -129,8 +183,6 @@ class _RecordingAssistant(_FakeAssistant):
 
 
 def test_pasted_multiline_text_is_one_message(monkeypatch, tmp_path):
-    import asyncio
-
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
