@@ -25,17 +25,22 @@ More:
 
 ## Recording
 
-- Recording: TODO (link). The 3-hour cutoff is marked at TODO (timestamp) in the video.
-- Gaps or technical problems in the recording: TODO
+The recording is in two parts (screen, microphone and webcam):
+
+- Part 1 (about 35 min, started 2:08 PM): https://www.loom.com/share/62e24bc9629e410b991db49a6a747351
+- Part 2 (about 2 h 8 min): https://www.loom.com/share/f2001469ed074261b74a7828fe9e62ed
+
+The 3-hour cutoff is at the end of part 2, where the cutoff commit is made and shown.
+- Gaps: the recording is split into two parts, so the time between them was not recorded. No other technical problems.
 
 ## 3-hour commit
 
-- Preserved commit at the 3-hour cutoff: [`b88619f`](https://github.com/thianlopezz/startup-assistant/commit/b88619f) (`docs: README unit test count`). Later commits only fill in this README section.
+- Preserved commit at the 3-hour cutoff: [`b88619f`](https://github.com/thianlopezz/startup-assistant/commit/b88619f) (`docs: README unit test count`). Later commits before the post-cutoff work only fill in README sections (cutoff link, recording, time, and the post-cutoff plan).
 
 ## Elapsed working time
 
-- Elapsed working time: TODO
-- Recording gaps / technical problems: TODO
+- Elapsed working time: about 2 h 43 min of recorded work (part 1 ≈ 35.5 min + part 2 ≈ 2 h 8 min), inside the 3-hour limit.
+- Recording gaps / technical problems: the split between part 1 and part 2 (see Recording); no other problems.
 
 ## Work after the cutoff
 
