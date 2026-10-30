@@ -32,14 +32,18 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def render_reply(console: Console, reply: Reply) -> None:
-    """Model text, then each artifact in a panel, then the honest actions footer."""
+    """Labelled header, model text, each artifact in a titled panel, then the honest actions footer."""
+    console.print()
+    console.rule("[bold green]Assistant[/]", align="left", style="green")
     console.print(Markdown(reply.text))
     for artifact in reply.artifacts:
-        console.print(Panel(Markdown(artifact)))
+        console.print(Panel(Markdown(artifact), title="Brief", title_align="left", border_style="green"))
     if reply.actions:
-        console.print(f"[Changed: {'; '.join(reply.actions)}]", markup=False, highlight=False)
+        footer = f"[Changed: {'; '.join(reply.actions)}]"
     else:
-        console.print("[No saved data changed]", markup=False, highlight=False)
+        footer = "[No saved data changed]"
+    console.print(footer, markup=False, highlight=False, style="dim")
+    console.print()
 
 
 def reset_data(data_dir: Path) -> None:
@@ -55,7 +59,8 @@ def make_prompt_session(**kwargs) -> PromptSession:
 async def _read_message(console: Console, session: PromptSession | None) -> str:
     if session is None:  # piped stdin (scripts, tests): one line per message
         return console.input("[bold cyan]You>[/] ")
-    return await session.prompt_async(HTML("<ansicyan><b>You&gt;</b></ansicyan> "))
+    console.rule("[bold cyan]You[/]", align="left", style="cyan")
+    return await session.prompt_async(HTML("<ansicyan><b>&gt;</b></ansicyan> "))
 
 
 async def _repl(

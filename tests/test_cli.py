@@ -31,6 +31,14 @@ def test_artifact_printed():
     assert out.index("Here it is") < out.index("Unique artifact body") < out.index("[No saved data changed]")
 
 
+def test_reply_is_labelled_as_assistant():
+    out = _render(Reply(text="Hello there", artifacts=["Brief body"]))
+    lines = [l for l in out.splitlines() if l.strip()]
+    assert "Assistant" in lines[0]  # header line comes before the reply text
+    assert out.index("Assistant") < out.index("Hello there")
+    assert "Brief" in out.split("Hello there", 1)[1].split("Brief body", 1)[0]  # titled brief panel
+
+
 def test_reset_removes_dir(tmp_path: Path):
     d = tmp_path / "data"
     d.mkdir()
