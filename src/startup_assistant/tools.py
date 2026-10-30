@@ -53,17 +53,19 @@ class TurnLog(BaseModel):
     user_text: str = ""
     actions: list[str] = []
     artifacts: list[str] = []
-    # Copies added by get_latest_brief/get_brief. Assistant.handle clears `artifacts` in place
-    # each turn but not this list, so tools prune it against `artifacts` (_forget_stale).
+    # Copies added by get_latest_brief/get_brief this turn; save_brief drops them from `artifacts`.
     retrieved: list[str] = []
-    # AI-checker rejections of save_brief in this turn. Assistant.handle starts a turn by
-    # assigning `user_text` (it doesn't call a reset method), so that assignment zeroes it.
+    # AI-checker rejections of save_brief in this turn.
     checker_rejections: int = 0
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        super().__setattr__(name, value)
-        if name == "user_text":
-            super().__setattr__("checker_rejections", 0)
+    def start(self, user_text: str) -> None:
+        """Begin a turn. Resets in place (clear(), not new lists): the tool handlers hold
+        references to these lists."""
+        self.user_text = user_text
+        self.actions.clear()
+        self.artifacts.clear()
+        self.retrieved.clear()
+        self.checker_rejections = 0
 
 
 def word_count(text: str) -> int:
@@ -313,10 +315,6 @@ def make_tools(
     """The six tools, keyed by short name. Handlers close over the stores and the TurnLog."""
     retrieved = turn.retrieved
 
-    def forget_stale() -> None:
-        """Drop copies from earlier turns: the turn reset empties `artifacts`, not `retrieved`."""
-        retrieved[:] = [a for a in retrieved if a in turn.artifacts]
-
     def display_name(campaign: str) -> str:
         """The stored display name for a campaign, or the cleaned-up name if it has none yet."""
         key = campaign_key(campaign)
@@ -462,7 +460,6 @@ def make_tools(
         # Copies fetched by get_latest_brief/get_brief earlier in this turn (e.g. to revise) aren't
         # what the founder asked to see once a new version exists. This also drops a v1 the
         # founder asked to see in the same turn ("show me v1 and draft a new brief"): known, kept.
-        forget_stale()
         turn.artifacts[:] = [a for a in turn.artifacts if a not in retrieved]
         retrieved.clear()
         origin = f"revises v{revises}" if revises is not None else "new"
@@ -482,7 +479,6 @@ def make_tools(
         GET_LATEST_BRIEF_SCHEMA,
     )
     async def get_latest_brief(args: dict[str, Any]) -> dict[str, Any]:
-        forget_stale()
         named = requested_campaign(args)
         if named is not None:
             record = briefs.latest(named)
@@ -524,7 +520,6 @@ def make_tools(
         GET_BRIEF_SCHEMA,
     )
     async def get_brief(args: dict[str, Any]) -> dict[str, Any]:
-        forget_stale()
         version = int(args["version"])
         campaign = read_campaign(args)
         record = briefs.get(version, campaign)

@@ -283,3 +283,24 @@ def test_followup_actions_are_added_to_reply(tmp_path):
     reply = asyncio.run(go())
     assert reply.actions == ["first", "rewrite"]
     assert reply.artifacts == ["# Brief from rewrite"]
+
+
+def test_handle_starts_a_fresh_turn_each_time(tmp_path):
+    client = FakeClient()
+    seen = []
+
+    async def go():
+        async with FakeClientAssistant(tmp_path, client) as assistant:
+            turn = assistant.turn
+            for _ in range(2):  # same text twice must still reset
+                turn.checker_rejections = 2
+                turn.actions.append("stale")
+                turn.artifacts.append("stale")
+                turn.retrieved.append("stale")
+                await assistant.handle("same text")
+                seen.append((turn.user_text, list(turn.actions), list(turn.artifacts),
+                             list(turn.retrieved), turn.checker_rejections))
+            assert assistant.turn is turn
+
+    asyncio.run(go())
+    assert seen == [("same text", [], [], [], 0)] * 2
