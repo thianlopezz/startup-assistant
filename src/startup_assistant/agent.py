@@ -147,9 +147,7 @@ class Assistant:
         if self._client is None:
             raise RuntimeError("Assistant is not connected; use `async with Assistant(...)`.")
         # Reset in place: the tool handlers hold a reference to this TurnLog.
-        self.turn.user_text = text
-        self.turn.actions.clear()
-        self.turn.artifacts.clear()
+        self.turn.start(text)
 
         # Send the full knowledge only when the model hasn't seen this version yet (first turn,
         # after a change, including one a tool made last turn, or after an aborted turn).

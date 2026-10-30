@@ -427,15 +427,34 @@ def test_retrieved_copies_do_not_accumulate_across_turns(stores):
     run(tools["get_latest_brief"].handler({}))
     run(tools["get_brief"].handler({"version": 1}))
     assert len(turn.retrieved) == 2
-    # Assistant.handle resets the turn in place
-    turn.user_text = "turn 2"
-    turn.actions.clear()
-    turn.artifacts.clear()
+    turn.start("turn 2")
     run(tools["get_brief"].handler({"version": 1}))
     assert len(turn.retrieved) == 1  # only this turn's copy
     run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
     assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith('Brief "Customer acquisition" v2 — CURRENT')
     assert turn.retrieved == []
+
+
+def test_turn_start_resets_every_field_in_place():
+    turn = TurnLog(user_text="old")
+    lists = (turn.actions, turn.artifacts, turn.retrieved)
+    turn.actions.append("a")
+    turn.artifacts.append("b")
+    turn.retrieved.append("b")
+    turn.checker_rejections = 2
+    turn.start("new")
+    assert turn.user_text == "new"
+    assert turn.actions == [] and turn.artifacts == [] and turn.retrieved == []
+    assert turn.checker_rejections == 0
+    assert (turn.actions, turn.artifacts, turn.retrieved) == lists
+    assert all(a is b for a, b in zip(lists, (turn.actions, turn.artifacts, turn.retrieved)))
+
+
+def test_assigning_user_text_no_longer_resets_checker_rejections():
+    turn = TurnLog()
+    turn.checker_rejections = 2
+    turn.user_text = "x"
+    assert turn.checker_rejections == 2
 
 
 # --- phase 3: named campaigns ---------------------------------------------------------
@@ -768,10 +787,7 @@ def test_checker_rejection_count_resets_with_the_turn(stores, monkeypatch):
     draft = {"draft": make_draft().model_dump()}
     run(save(draft))
     run(save(draft))
-    # Assistant.handle resets the turn in place (same user text twice must still reset)
-    turn.user_text = "turn 1"
-    turn.actions.clear()
-    turn.artifacts.clear()
+    turn.start("turn 1")  # same user text twice must still reset
     assert run(save(draft))["is_error"] is True
     assert briefs.list() == []
 
