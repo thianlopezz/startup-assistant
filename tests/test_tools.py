@@ -3,6 +3,7 @@ import asyncio
 import pytest
 from fakes import FakeBriefStore, FakeKnowledgeStore
 
+from startup_assistant import checker
 from startup_assistant.contracts import BriefDraft, Channel
 from startup_assistant.tools import (
     TOOL_NAMES,
@@ -47,6 +48,12 @@ def run(coro):
 @pytest.fixture
 def stores():
     return FakeKnowledgeStore(), FakeBriefStore()
+
+
+@pytest.fixture(autouse=True)
+def no_ai_checker(monkeypatch):
+    """Unit tests never call the model; the checker tests below turn it back on."""
+    monkeypatch.setattr(checker, "checker_enabled", lambda: False)
 
 
 # --- pure functions -------------------------------------------------------------------
@@ -113,9 +120,9 @@ def test_record_header_current_and_superseded(stores):
     r2 = briefs.save(draft, "md", "revised", 1, 1, "revise it")
     h1 = render_record_header(r1, latest_version=2)
     h2 = render_record_header(r2, latest_version=2)
-    assert h1.startswith("Brief v1 — superseded by v2")
+    assert h1.startswith('Brief "Customer acquisition" v1 — superseded by v2')
     assert "knowledge v0" in h1
-    assert h2.startswith("Brief v2 — CURRENT")
+    assert h2.startswith('Brief "Customer acquisition" v2 — CURRENT')
     assert "revises v1" in h2 and "knowledge v1" in h2 and r2.created_at in h2
 
 
@@ -127,8 +134,9 @@ def test_tool_names_and_server(stores):
         "mcp__harbordesk__get_latest_brief",
         "mcp__harbordesk__list_briefs",
         "mcp__harbordesk__get_brief",
+        "mcp__harbordesk__compare_briefs",
     ]
-    assert len(TOOL_NAMES) == 5
+    assert len(TOOL_NAMES) == 6
     server = build_server(knowledge, briefs, TurnLog())
     assert server["type"] == "sdk" and server["name"] == "harbordesk"
 
@@ -149,12 +157,12 @@ def test_save_brief_tool_records_action_and_artifact(stores):
     tools = make_tools(knowledge, briefs, turn)
     result = run(tools["save_brief"].handler({"draft": make_draft().model_dump()}))
     assert not result.get("is_error")
-    assert turn.actions == ["Brief v1 saved (new)"]
+    assert turn.actions == ['Brief "Customer acquisition" v1 saved (new)']
     record = briefs.latest()
     assert record.kind == "created" and record.revises is None
     assert record.request == "Create a campaign brief"
     assert record.markdown in turn.artifacts[0]
-    assert turn.artifacts[0].startswith("Brief v1 — CURRENT")
+    assert turn.artifacts[0].startswith('Brief "Customer acquisition" v1 — CURRENT')
 
 
 def test_save_brief_revision(stores):
@@ -167,10 +175,10 @@ def test_save_brief_revision(stores):
     run(tools["get_latest_brief"].handler({}))
     result = run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
     assert not result.get("is_error")
-    assert turn.actions == ["Brief v2 saved (revises v1)"]
+    assert turn.actions == ['Brief "Customer acquisition" v2 saved (revises v1)']
     assert briefs.latest().kind == "revised" and briefs.latest().revises == 1
     # the v1 copy fetched for revising is dropped; the founder sees the new version
-    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
+    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith('Brief "Customer acquisition" v2 — CURRENT')
 
 
 def test_save_brief_revises_unknown_version(stores):
@@ -325,7 +333,7 @@ def test_save_brief_drops_all_retrieved_artifacts(stores):
     tools = make_tools(knowledge, briefs, turn)
     run(tools["get_latest_brief"].handler({}))
     run(tools["save_brief"].handler({"draft": make_draft().model_dump()}))  # new, not a revision
-    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
+    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith('Brief "Customer acquisition" v2 — CURRENT')
 
 
 # --- phase 2 track 1 ------------------------------------------------------------------
@@ -408,7 +416,7 @@ def test_get_brief_copy_dropped_when_new_version_saved(stores):
     tools = make_tools(knowledge, briefs, turn)
     run(tools["get_brief"].handler({"version": 1}))
     run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
-    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
+    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith('Brief "Customer acquisition" v2 — CURRENT')
 
 
 def test_retrieved_copies_do_not_accumulate_across_turns(stores):
@@ -426,5 +434,293 @@ def test_retrieved_copies_do_not_accumulate_across_turns(stores):
     run(tools["get_brief"].handler({"version": 1}))
     assert len(turn.retrieved) == 1  # only this turn's copy
     run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
-    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
+    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith('Brief "Customer acquisition" v2 — CURRENT')
     assert turn.retrieved == []
+
+
+# --- phase 3: named campaigns ---------------------------------------------------------
+
+
+def _text(result) -> str:
+    return result["content"][0]["text"]
+
+
+def test_save_brief_named_campaign_actions_and_header(stores):
+    knowledge, briefs = stores
+    turn = TurnLog(user_text="spring")
+    tools = make_tools(knowledge, briefs, turn)
+    draft = make_draft().model_dump()
+    run(tools["save_brief"].handler({"draft": draft}))
+    run(tools["save_brief"].handler({"draft": draft, "campaign": "Spring launch"}))
+    run(tools["save_brief"].handler({"draft": draft, "campaign": " spring LAUNCH", "revises": 1}))
+    assert turn.actions == [
+        'Brief "Customer acquisition" v1 saved (new)',
+        'Brief "Spring launch" v1 saved (new)',
+        'Brief "Spring launch" v2 saved (revises v1)',
+    ]
+    assert turn.artifacts[-1].startswith('Brief "Spring launch" v2 — CURRENT · revises v1 · ')
+    assert briefs.campaigns() == ["Customer acquisition", "Spring launch"]
+
+
+def test_save_brief_revises_version_from_other_campaign(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "a1", "created", None, 0, "r")
+    briefs.save(make_draft(), "a2", "revised", 1, 0, "r")
+    briefs.save(make_draft(), "b1", "created", None, 0, "r", campaign="Spring launch")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    result = run(
+        tools["save_brief"].handler(
+            {"draft": make_draft().model_dump(), "campaign": "Spring launch", "revises": 2}
+        )
+    )
+    assert result["is_error"] is True
+    assert "Spring launch" in _text(result)
+    assert len(briefs.list()) == 3 and turn.actions == [] and turn.artifacts == []
+
+
+def test_get_latest_brief_default_is_most_recent_and_names_other_campaigns(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "A1", "created", None, 0, "r")
+    briefs.save(make_draft(), "B1", "created", None, 0, "r", campaign="Spring launch")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    text = _text(run(tools["get_latest_brief"].handler({})))
+    assert turn.artifacts == [render_record_header(briefs.latest(), 1) + "\n\nB1"]
+    assert turn.artifacts[0].startswith('Brief "Spring launch" v1 — CURRENT')
+    after = text.split("B1", 1)[1]
+    assert '"Customer acquisition"' in after
+    turn.artifacts.clear()
+    run(tools["get_latest_brief"].handler({"campaign": "customer acquisition"}))
+    assert turn.artifacts[0].endswith("A1")
+    assert turn.actions == []
+
+
+def test_get_latest_brief_single_campaign_names_no_others(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "A1", "created", None, 0, "r")
+    text = _text(run(make_tools(knowledge, briefs, TurnLog())["get_latest_brief"].handler({})))
+    assert "other campaign" not in text.lower()
+
+
+def test_get_latest_brief_unknown_campaign(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "A1", "created", None, 0, "r")
+    turn = TurnLog()
+    result = run(
+        make_tools(knowledge, briefs, turn)["get_latest_brief"].handler({"campaign": "Nope"})
+    )
+    assert '"Nope"' in _text(result) and '"Customer acquisition"' in _text(result)
+    assert turn.artifacts == []
+
+
+def test_get_brief_with_campaign(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "A1", "created", None, 0, "r")
+    briefs.save(make_draft(), "A2", "revised", 1, 0, "r")
+    briefs.save(make_draft(), "B1", "created", None, 0, "r", campaign="Spring launch")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    run(tools["get_brief"].handler({"version": 1, "campaign": "Spring launch"}))
+    run(tools["get_brief"].handler({"version": 1, "campaign": "Customer acquisition"}))
+    assert turn.artifacts[0].startswith('Brief "Spring launch" v1 — CURRENT')
+    assert turn.artifacts[0].endswith("B1")
+    assert turn.artifacts[1].startswith('Brief "Customer acquisition" v1 — superseded by v2')
+    result = run(tools["get_brief"].handler({"version": 2, "campaign": "Spring launch"}))
+    assert "v2" in _text(result) and "Spring launch" in _text(result)
+    assert len(turn.artifacts) == 2
+
+
+def test_list_briefs_grouped_by_campaign(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(title="A one"), "A1", "created", None, 0, "r")
+    briefs.save(make_draft(title="B one"), "B1", "created", None, 0, "r", campaign="Spring launch")
+    briefs.save(make_draft(title="A two"), "A2", "revised", 1, 0, "r")
+    text = _text(run(make_tools(knowledge, briefs, TurnLog())["list_briefs"].handler({})))
+    ca, sl = text.index('"Customer acquisition"'), text.index('"Spring launch"')
+    assert ca < text.index("A one") < text.index("A two") < sl < text.index("B one")
+    a_section = text[ca:sl]
+    assert "v1 · superseded by v2" in a_section and "v2 · CURRENT" in a_section
+    assert "v1 · CURRENT" in text[sl:]
+
+
+def test_update_knowledge_names_stale_briefs_with_campaign(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "A1", "created", None, 0, "r")
+    briefs.save(make_draft(), "B1", "created", None, 0, "r", campaign="Spring launch")
+    tools = make_tools(knowledge, briefs, TurnLog(user_text="x"))
+    text = _text(
+        run(
+            tools["update_company_knowledge"].handler(
+                {"summary": "s", "field_changes": {}, "new_rules": ["r"]}
+            )
+        )
+    )
+    assert '"Customer acquisition" v1' in text and '"Spring launch" v1' in text
+
+
+# --- phase 3: compare_briefs ----------------------------------------------------------
+
+
+def test_compare_briefs_artifact(stores):
+    knowledge, briefs = stores
+    md1 = render_brief_markdown(make_draft())
+    md2 = render_brief_markdown(make_draft(buyer="Head of Customer Success"))
+    briefs.save(make_draft(), md1, "created", None, 0, "r")
+    briefs.save(make_draft(), md2, "revised", 1, 1, "r")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    result = run(tools["compare_briefs"].handler({"from_version": 1, "to_version": 2}))
+    assert not result.get("is_error")
+    assert turn.actions == []
+    assert len(turn.artifacts) == 1
+    art = turn.artifacts[0]
+    assert art.startswith('Changes in "Customer acquisition": v1 → v2')
+    assert "```diff\n" in art and art.rstrip().endswith("```")
+    lines = art.splitlines()
+    assert "--- v1" in lines and "+++ v2" in lines
+    assert "-Founder or operations lead" in lines
+    assert "+Head of Customer Success" in lines
+    assert "+Head of Customer Success" in _text(result)
+
+
+def test_compare_briefs_named_campaign(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "A1", "created", None, 0, "r")
+    briefs.save(make_draft(), "B one\n", "created", None, 0, "r", campaign="Spring launch")
+    briefs.save(make_draft(), "B two\n", "revised", 1, 0, "r", campaign="Spring launch")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    run(
+        tools["compare_briefs"].handler(
+            {"from_version": 1, "to_version": 2, "campaign": "spring launch"}
+        )
+    )
+    art = turn.artifacts[0]
+    assert art.startswith('Changes in "Spring launch": v1 → v2')
+    assert "-B one" in art.splitlines() and "+B two" in art.splitlines()
+
+
+def test_compare_briefs_missing_version(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "A1", "created", None, 0, "r")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    result = run(tools["compare_briefs"].handler({"from_version": 1, "to_version": 3}))
+    assert result["is_error"] is True
+    assert "v3" in _text(result)
+    assert turn.artifacts == [] and turn.actions == []
+
+
+def test_compare_briefs_fence_survives_backticks_in_markdown(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "a\n```\ncode\n```\n", "created", None, 0, "r")
+    briefs.save(make_draft(), "b\n```\ncode\n```\n", "revised", 1, 0, "r")
+    turn = TurnLog()
+    run(
+        make_tools(knowledge, briefs, turn)["compare_briefs"].handler(
+            {"from_version": 1, "to_version": 2}
+        )
+    )
+    art = turn.artifacts[0]
+    assert "````diff\n" in art and art.rstrip().endswith("````")
+
+
+# --- phase 3: AI checker wiring -------------------------------------------------------
+
+
+def test_checker_problems_block_the_save(stores, monkeypatch):
+    knowledge, briefs = stores
+    calls = []
+
+    async def fake_check(draft, knowledge_text, pricing_restricted, model=None):
+        calls.append((draft, knowledge_text, pricing_restricted))
+        return ["main_message: invented statistic", "buyer: contradicts knowledge"]
+
+    monkeypatch.setattr(checker, "checker_enabled", lambda: True)
+    monkeypatch.setattr(checker, "check_brief", fake_check)
+    turn = TurnLog()
+    result = run(
+        make_tools(knowledge, briefs, turn)["save_brief"].handler(
+            {"draft": make_draft().model_dump()}
+        )
+    )
+    assert result["is_error"] is True
+    text = _text(result)
+    assert "Brief check found problems:" in text
+    assert "invented statistic" in text and "contradicts knowledge" in text
+    assert briefs.list() == [] and turn.actions == [] and turn.artifacts == []
+    assert calls == [(make_draft(), knowledge.render(), knowledge.pricing_restricted)]
+
+
+def test_checker_not_called_when_code_checks_fail(stores, monkeypatch):
+    knowledge, briefs = stores
+    calls = []
+
+    async def fake_check(*a, **k):
+        calls.append(a)
+        return []
+
+    monkeypatch.setattr(checker, "checker_enabled", lambda: True)
+    monkeypatch.setattr(checker, "check_brief", fake_check)
+    draft = make_draft(email_body=words(170)).model_dump()
+    run(make_tools(knowledge, briefs, TurnLog())["save_brief"].handler({"draft": draft}))
+    assert calls == []
+
+
+def test_checker_none_saves_with_note(stores, monkeypatch):
+    knowledge, briefs = stores
+
+    async def fake_check(*a, **k):
+        return None
+
+    monkeypatch.setattr(checker, "checker_enabled", lambda: True)
+    monkeypatch.setattr(checker, "check_brief", fake_check)
+    turn = TurnLog()
+    result = run(
+        make_tools(knowledge, briefs, turn)["save_brief"].handler(
+            {"draft": make_draft().model_dump()}
+        )
+    )
+    assert not result.get("is_error")
+    assert len(briefs.list()) == 1
+    assert turn.actions == ['Brief "Customer acquisition" v1 saved (new)']
+    assert (
+        "Note: the AI brief check could not run; saved after the code checks only."
+        in _text(result)
+    )
+
+
+def test_checker_empty_list_saves_without_note(stores, monkeypatch):
+    knowledge, briefs = stores
+
+    async def fake_check(*a, **k):
+        return []
+
+    monkeypatch.setattr(checker, "checker_enabled", lambda: True)
+    monkeypatch.setattr(checker, "check_brief", fake_check)
+    result = run(
+        make_tools(knowledge, briefs, TurnLog())["save_brief"].handler(
+            {"draft": make_draft().model_dump()}
+        )
+    )
+    assert not result.get("is_error")
+    assert len(briefs.list()) == 1
+    assert "could not run" not in _text(result)
+
+
+def test_checker_disabled_is_never_called(stores, monkeypatch):
+    knowledge, briefs = stores
+
+    async def boom(*a, **k):
+        raise AssertionError("check_brief must not be called when disabled")
+
+    monkeypatch.setattr(checker, "checker_enabled", lambda: False)
+    monkeypatch.setattr(checker, "check_brief", boom)
+    result = run(
+        make_tools(knowledge, briefs, TurnLog())["save_brief"].handler(
+            {"draft": make_draft().model_dump()}
+        )
+    )
+    assert not result.get("is_error")
+    assert len(briefs.list()) == 1
