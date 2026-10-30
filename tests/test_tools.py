@@ -724,3 +724,66 @@ def test_checker_disabled_is_never_called(stores, monkeypatch):
     )
     assert not result.get("is_error")
     assert len(briefs.list()) == 1
+
+
+# --- phase 3 fix round ----------------------------------------------------------------
+
+
+def _always_problems(monkeypatch, calls):
+    async def fake_check(*a, **k):
+        calls.append(a)
+        return ["main_message: invented statistic"]
+
+    monkeypatch.setattr(checker, "checker_enabled", lambda: True)
+    monkeypatch.setattr(checker, "check_brief", fake_check)
+
+
+def test_checker_rejections_capped_per_turn(stores, monkeypatch):
+    knowledge, briefs = stores
+    calls = []
+    _always_problems(monkeypatch, calls)
+    turn = TurnLog(user_text="make a brief")
+    save = make_tools(knowledge, briefs, turn)["save_brief"].handler
+    draft = {"draft": make_draft().model_dump()}
+    for _ in range(2):
+        result = run(save(draft))
+        assert result["is_error"] is True
+        assert "Brief check found problems:" in _text(result)
+        assert briefs.list() == [] and turn.actions == []
+    result = run(save(draft))
+    assert not result.get("is_error")
+    assert len(briefs.list()) == 1
+    assert turn.actions == ['Brief "Customer acquisition" v1 saved (new)']
+    text = _text(result)
+    assert "The AI brief check still reported: main_message: invented statistic." in text
+    assert "Saved after 2 rejected attempts; review these points." in text
+    assert len(calls) == 3
+
+
+def test_checker_rejection_count_resets_with_the_turn(stores, monkeypatch):
+    knowledge, briefs = stores
+    _always_problems(monkeypatch, [])
+    turn = TurnLog(user_text="turn 1")
+    save = make_tools(knowledge, briefs, turn)["save_brief"].handler
+    draft = {"draft": make_draft().model_dump()}
+    run(save(draft))
+    run(save(draft))
+    # Assistant.handle resets the turn in place (same user text twice must still reset)
+    turn.user_text = "turn 1"
+    turn.actions.clear()
+    turn.artifacts.clear()
+    assert run(save(draft))["is_error"] is True
+    assert briefs.list() == []
+
+
+def test_revise_without_campaign_uses_latest_briefs_campaign(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "B1", "created", None, 0, "r", campaign="Spring launch")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    result = run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
+    assert not result.get("is_error")
+    assert turn.actions == ['Brief "Spring launch" v2 saved (revises v1)']
+    # a new brief with no campaign still goes to the default campaign
+    run(tools["save_brief"].handler({"draft": make_draft().model_dump()}))
+    assert turn.actions[-1] == 'Brief "Customer acquisition" v1 saved (new)'
