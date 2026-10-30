@@ -330,8 +330,11 @@ def run_checks(
         section = transcript_text.rsplit(marker, 1)[-1]
         # Only artifact fences count: the brief must have been printed from the store,
         # not pasted into the model's reply text.
+        # The artifact is "<version header>\n\n<stored markdown>", so look for the stored
+        # markdown inside a fence rather than requiring the fence to equal it.
         fences = re.findall(r"~~~~markdown\n(.*?)\n~~~~", section, flags=re.S)
-        return v2.markdown in fences, "phase-2 artifact compared with stored v2 markdown"
+        stored = v2.markdown.rstrip("\n")
+        return any(stored in f for f in fences), "phase-2 artifact compared with stored v2 markdown"
 
     check("v1 exists, created, knowledge v0, email <= 150 words", v1_ok)
     check("knowledge v1: buyer is Customer Success, pricing restricted", knowledge_ok)
