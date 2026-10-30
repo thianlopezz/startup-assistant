@@ -4,8 +4,6 @@ A command-line assistant for the founder of HarborDesk. Across separate requests
 questions from company knowledge, creates and revises marketing campaign briefs, absorbs new
 company information, and retrieves saved work, deciding for itself which of those a request needs.
 
-> Draft. Items marked `TODO` are filled in after the recorded run.
-
 ## Recording
 
 - Recording: TODO (link). The 3-hour cutoff is marked at TODO (timestamp) in the video.
@@ -22,8 +20,7 @@ company information, and retrieves saved work, deciding for itself which of thos
 
 ## Work after the cutoff
 
-TODO. For each change: what changed, why, how much time it took, and how to reach that version.
-If nothing was done after the cutoff, say so.
+TODO. If nothing was done after the cutoff, say so.
 
 ## What was built, setup and run
 
@@ -75,20 +72,23 @@ Tests:
 RUN_LIVE=1 .venv/bin/pytest -m live  # also calls the real model
 ```
 
-Example outputs: `examples/transcript.md` (TODO: committed after the recorded run).
+Example outputs (all from live-model runs):
+
+- `examples/transcript.md`: the six required interactions (turn 6 runs in a fresh process).
+- `examples/demo-data/`: the knowledge and brief JSON those turns produced.
+- `examples/alt-wording.md`: different phrasings (retrieve with nothing saved, a casual update, a pricing question). Re-run with `.venv/bin/python scripts/alt_wording.py <empty-dir>`.
 
 ## Assumptions, design decisions and shortcuts
 
-- The "no pricing" restriction covers campaign materials (briefs and draft emails), as the founder
-  wrote it. After the update the `pricing` field reads "Under review" and a direct pricing question in
-  chat gets that status, not a bare price. `save_brief` enforces the restriction in code; chat replies
-  rely on the prompt.
-- Built on the Claude Agent SDK, pydantic and rich rather than a hand-written tool loop, validation
-  layer or terminal formatting.
-- Storage is plain JSON files with a version number, not a database. Single process, no concurrency.
-- Built-in Claude Code tools (Bash, Read, Write, web search) and user/project settings are disabled for
-  the assistant.
-- TODO: further shortcuts discovered during the build.
+- **Pricing scope.** The "no pricing" rule covers campaign materials (briefs and draft emails), as the founder wrote it. After the update, the `pricing` field reads "under review". A direct pricing question in chat gets that status, and the old price is mentioned only as out of date. `save_brief` enforces the rule in code; chat replies rely on the prompt.
+- **Guardrails in code, not only in the prompt.** `save_brief` rejects a brief that has anything other than 2 channels, an email body over 150 words, any "half"/"halve"/"50%" claim, or, while pricing is restricted, any `$`, "N per month" or the words price/pricing. The model gets the error and retries. These checks are deliberately blunt: "half-day workshop" would be rejected too.
+- **Footer written by code.** The `[Changed: …]` footer comes from tool code, not from the model, so the assistant cannot claim a brief was revised when only knowledge changed.
+- **One brief series.** Briefs are a single numbered series (v1, v2, …); each revision points at the version it revises, and the newest is current. There are no separately named campaigns and no tool to fetch an old version (the data is there; `BriefStore.get(n)` exists).
+- **Knowledge updates.** An update records the founder's message word for word, a summary, changes to the 9 profile fields, and new rules. Facts that don't fit a field go in as rules.
+- **Storage.** Plain JSON files with an atomic replace-on-write. Single process, no locking, no recovery from a corrupt file.
+- **Assumptions over questions.** For briefs, the assistant goes ahead and lists assumptions and open questions instead of asking first. Retrieval never generates anything: with nothing saved it says so and offers to create a brief.
+- **Libraries over hand-written code.** The Claude Agent SDK (agent loop, tool calls, login), pydantic (types, validation, JSON) and rich (terminal output).
+- **Locked down.** Built-in Claude Code tools (Bash, Read, Write, web search …), other MCP servers, and user/project settings and CLAUDE.md are all disabled for the assistant (`tools=[]`, `strict_mcp_config`, `setting_sources=[]`, `permission_mode="dontAsk"`).
 
 ## How the assistant chooses actions, and how knowledge stays separate from deliverables
 
@@ -105,16 +105,39 @@ Example outputs: `examples/transcript.md` (TODO: committed after the recorded ru
 
 ## What was verified and what happened
 
-- Offline unit tests: TODO (results).
-- `scripts/demo.py --check` against the real model: TODO (results).
-- Live test (`RUN_LIVE=1`): TODO (results).
-- Manual run through the six required interactions: TODO (results).
+- **Unit tests:** `pytest -q` → 48 passed, 1 skipped (the live test). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error) and the CLI (footer, error handling).
+- **Live test:** `RUN_LIVE=1 pytest -m live` → 1 passed. Answering a question uses no tool and changes nothing.
+- **Live demo:** `scripts/demo.py --check`.
+  - The first run gave 4/5. The "retrieval printed the stored brief verbatim" check failed. The brief *was* verbatim, but the printed block starts with a version header line and the check demanded exact equality. I fixed the check to find the stored text inside the printed block, and the final run passed 5/5. Footers per turn: none / v1 saved / knowledge v1 / none / v2 saved (revises v1) / none.
+- **Different wordings** (`examples/alt-wording.md`):
+  - retrieval with nothing saved → no brief created
+  - a casual "btw, remember…" → knowledge v1, and it says there was nothing to revise
+  - "what do we charge?" → under review
+  - "who do we sell to these days?" → the new audience
+- **Code review:** each parallel track got an AI review before merging. Problems found and fixed:
+  - error text containing `[…]` could crash the REPL (rich markup)
+  - the pricing restriction turned on only if the model changed the `pricing` field, not when it only added a rule
+  - reworded "half" claims got through
+  - a retrieved brief could linger as "CURRENT" after a new save
+  - an interrupted turn could leak into the next turn
 
 ## Unfinished and next steps
 
-TODO. Known gaps and what would come next.
+- The keyword guardrails can reject harmless wording ("half-day"). A second model call acting as a checker, or a list of allowed phrases, would be more precise.
+- No tool to show an older version or compare versions (`get_brief(n)`), and no named campaigns.
+- Pricing in chat is guarded by the prompt only.
+- The interrupt-and-drain path for a turn cancelled mid-way is checked by hand, with no automated test.
+- Context grows within a long session, because the full knowledge block is re-sent every turn.
+- Small cleanups: a shared atomic-write helper (duplicated in two stores), and a stronger `render()` test.
 
 ## AI tools and models used
 
-TODO. For example: Claude Code (model: TODO) for planning and implementation; the Claude Agent SDK
-with TODO model at runtime.
+- **Claude Code** with Claude Opus 5.5 (`claude-opus-5-5`) as the main session. Superpowers skills shaped the process: brainstorming produced the design doc (`docs/superpowers/specs/`), writing-plans produced the implementation plan (`docs/superpowers/plans/`), and subagent-driven development ran the build.
+- **Parallel subagents in git worktrees.**
+  - Storage track: Sonnet
+  - Tools/agent track: Opus
+  - CLI/demo/README track: Sonnet
+  - Each track then had an AI code review and one fix round. The main session did the scaffolding, merges, live verification and this README.
+- **Claude in Chrome** (in Brave) to read the assessment pages in Notion.
+- **At runtime:** the Claude Agent SDK 0.2.175 on the default model (`claude-opus-5-5`), authenticated through the local Claude Code login (or `ANTHROPIC_API_KEY`, if set).
+
