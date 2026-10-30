@@ -201,3 +201,22 @@ def test_live_pricing_hint(tmp_path):
     )
     out = _live_check(draft, True, tmp_path, "pricing-hint")
     assert out
+
+
+def test_timeout_closes_query_stream(monkeypatch):
+    closed = []
+
+    class HangingStream:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            await asyncio.sleep(5)
+
+        async def aclose(self):
+            closed.append(True)
+
+    monkeypatch.setattr(checker, "query", lambda *, prompt, options=None: HangingStream())
+    monkeypatch.setattr(checker, "TIMEOUT_S", 0.05)
+    assert run(checker.check_brief(make_draft(), "K", False)) is None
+    assert closed == [True]

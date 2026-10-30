@@ -2,6 +2,7 @@
 brief with company knowledge and lists rule violations the keyword checks can't see."""
 
 import asyncio
+import contextlib
 import json
 import os
 
@@ -75,13 +76,15 @@ async def _ask(prompt: str, system: str, model: str) -> str:
     )
     parts: list[str] = []
     result_text: str | None = None
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, AssistantMessage):
-            parts += [b.text for b in message.content if isinstance(b, TextBlock)]
-        elif isinstance(message, ResultMessage):
-            if message.is_error:
-                raise RuntimeError(message.subtype)
-            result_text = message.result
+    # aclosing: on timeout or cancellation, close the stream so the `claude` subprocess exits.
+    async with contextlib.aclosing(query(prompt=prompt, options=options)) as stream:
+        async for message in stream:
+            if isinstance(message, AssistantMessage):
+                parts += [b.text for b in message.content if isinstance(b, TextBlock)]
+            elif isinstance(message, ResultMessage):
+                if message.is_error:
+                    raise RuntimeError(message.subtype)
+                result_text = message.result
     return "".join(parts) or result_text or ""
 
 
