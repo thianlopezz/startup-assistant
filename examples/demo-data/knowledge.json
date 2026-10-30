@@ -2,9 +2,9 @@
   "updates": [
     {
       "version": 1,
-      "created_at": "2026-10-30T20:42:24+00:00",
+      "created_at": "2026-10-30T21:07:11+00:00",
       "source_text": "We're shifting our target to B2B software companies with 100–500 employees. The buyer is the Head of Customer Success. Remember this as our target going forward. Pricing is under review, so leave prices out of campaign materials. Our product capabilities are unchanged.",
-      "summary": "Target shifted to B2B software companies with 100–500 employees; buyer is now the Head of Customer Success. Pricing is under review and must be left out of campaign materials. Capabilities unchanged.",
+      "summary": "Target shifts to B2B software companies with 100–500 employees, with the Head of Customer Success as buyer. Pricing is under review and must be left out of campaign materials; capabilities unchanged.",
       "field_changes": {
         "target_customers": "B2B software companies with 100–500 employees.",
         "primary_buyer": "Head of Customer Success.",

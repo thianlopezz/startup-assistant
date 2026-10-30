@@ -11,6 +11,9 @@ MSGS = [
     "Write a campaign brief for the new audience and save it.",
     "Make the email shorter and friendlier, and save that as a revision.",
     "Show me version 1 of the brief.",
+    "What changed between version 1 and version 2?",
+    "Start a separate brief for a spring webinar campaign aimed at the same audience, and save it.",
+    "Show me the latest brief.",
 ]
 
 async def main(d):
