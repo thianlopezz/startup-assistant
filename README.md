@@ -138,7 +138,7 @@ Environment variables (all optional):
 
 ## What was verified and what happened
 
-- **Unit tests:** `pytest -q` → 175 passed, 4 skipped (the live tests). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error), the CLI (footer, error handling) and the startup login check.
+- **Unit tests:** `pytest -q` → 197 passed, 4 skipped (the live tests). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error), the CLI (footer, error handling) and the startup login check.
 - **Live tests:** `RUN_LIVE=1 pytest -m live` → 4 passed. Answering a question uses no tool and changes nothing. The AI checker returns no problems for a clean brief, and flags a made-up customer statistic and an indirect "commercial terms are left out" pricing hint.
 - **Live demo:** `scripts/demo.py --check`.
   - The first run gave 4/5. The "retrieval printed the stored brief verbatim" check failed. The brief *was* verbatim, but the printed block starts with a version header line and the check demanded exact equality. I fixed the check to find the stored text inside the printed block, and the final run passed 5/5. Footers per turn: none / v1 saved / knowledge v1 / none / v2 saved (revises v1) / none.
