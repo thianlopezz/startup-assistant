@@ -172,3 +172,109 @@ def test_knowledge_resent_after_compaction(tmp_path):
     assert FULL_KNOWLEDGE in _knowledge_section(q1)
     assert UNCHANGED in _knowledge_section(q2)
     assert FULL_KNOWLEDGE in _knowledge_section(q3)
+
+
+# --- pricing guard on chat replies ---
+
+PRICE_REPLY = "HarborDesk costs $299 per month."
+CLEAN_REPLY = "Pricing is under review, so I can't quote a price."
+NOTE = "_Note: pricing is under review; any figure above is not a current price._"
+
+
+def _restrict(assistant):
+    assistant.knowledge.apply_update(
+        source_text="Pricing is under review.", summary="Pricing change",
+        field_changes={"pricing": "Under review"}, new_rules=[],
+    )
+
+
+def _run_guarded(tmp_path, scripts, restricted=True):
+    client = FakeClient()
+    client.scripts = scripts
+
+    async def go():
+        async with FakeClientAssistant(tmp_path, client) as assistant:
+            if restricted:
+                _restrict(assistant)
+            first = await assistant.handle("What does it cost?")
+            await assistant.handle("and again?")
+            return first
+
+    return client, asyncio.run(go())
+
+
+def test_restricted_price_reply_gets_one_followup_and_rewrite(tmp_path):
+    client, reply = _run_guarded(tmp_path, [
+        [_text(PRICE_REPLY), _result()],
+        [_text(CLEAN_REPLY), _result()],
+    ])
+    assert len(client.queries) == 3  # turn 1, follow-up, turn 2
+    followup = client.queries[1]
+    assert followup.startswith(
+        'Your last reply presented a price as current: "HarborDesk costs $299 per month".'
+    )
+    assert "Do not call any tools." in followup
+    assert reply.text == CLEAN_REPLY
+
+
+def test_followup_does_not_disturb_knowledge_resend(tmp_path):
+    client, _ = _run_guarded(tmp_path, [
+        [_text(PRICE_REPLY), _result()],
+        [_text(CLEAN_REPLY), _result()],
+        [_text(CLEAN_REPLY), _result()],
+    ])
+    q1, followup, q2 = client.queries
+    assert FULL_KNOWLEDGE in _knowledge_section(q1)
+    assert "## Current company knowledge" not in followup
+    assert UNCHANGED in _knowledge_section(q2)
+
+
+def test_restricted_still_bad_rewrite_appends_note(tmp_path):
+    client, reply = _run_guarded(tmp_path, [
+        [_text(PRICE_REPLY), _result()],
+        [_text("Sorry: it is $299/mo."), _result()],
+    ])
+    assert len(client.queries) == 3  # never more than one follow-up
+    assert reply.text == f"Sorry: it is $299/mo.\n\n{NOTE}"
+
+
+def test_restricted_followup_error_keeps_original_with_note(tmp_path):
+    client, reply = _run_guarded(tmp_path, [
+        [_text(PRICE_REPLY), _result()],
+        [RuntimeError("boom")],
+    ])
+    assert reply.text == f"{PRICE_REPLY}\n\n{NOTE}"
+    assert client.interrupted == 1  # the broken follow-up was cleaned up
+    assert len(client.queries) == 3
+
+
+def test_not_restricted_no_followup(tmp_path):
+    client, reply = _run_guarded(tmp_path, [[_text(PRICE_REPLY), _result()]], restricted=False)
+    assert len(client.queries) == 2
+    assert reply.text == PRICE_REPLY
+
+
+def test_restricted_clean_reply_no_followup(tmp_path):
+    client, reply = _run_guarded(tmp_path, [[_text(CLEAN_REPLY), _result()]])
+    assert len(client.queries) == 2
+    assert reply.text == CLEAN_REPLY
+
+
+def test_followup_keeps_original_actions(tmp_path):
+    client = FakeClient()
+    client.scripts = [[_text(PRICE_REPLY), _result()], [_text(CLEAN_REPLY), _result()]]
+
+    async def go():
+        async with FakeClientAssistant(tmp_path, client) as assistant:
+            _restrict(assistant)
+            orig_query = client.query
+
+            async def query(prompt):
+                await orig_query(prompt)
+                # a tool sneaking in during the follow-up must not leak into the reply
+                assistant.turn.actions.append("first" if len(client.queries) == 1 else "sneaky")
+
+            client.query = query
+            return await assistant.handle("What does it cost?")
+
+    assert asyncio.run(go()).actions == ["first"]

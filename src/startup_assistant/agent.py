@@ -21,10 +21,19 @@ from startup_assistant.briefs import BriefStore
 from startup_assistant.contracts import Reply
 from startup_assistant.knowledge import KnowledgeStore
 from startup_assistant.prompts import SYSTEM_PROMPT, build_turn_message
+from startup_assistant.reply_guard import current_price_claims
 from startup_assistant.tools import SERVER_NAME, TOOL_NAMES, TurnLog, brief_index, build_server
 
 MAX_TURNS = 8
 DRAIN_TIMEOUT_S = 10
+
+PRICING_NOTE = "_Note: pricing is under review; any figure above is not a current price._"
+PRICING_FOLLOWUP = (
+    'Your last reply presented a price as current: "{claim}". Pricing is under review. '
+    "Rewrite your whole reply for the founder so that no price is stated as current; you may "
+    "say pricing is under review and mention the old figure only as the previous price. "
+    "Do not call any tools."
+)
 
 
 def auth_mode() -> Literal["api-key", "claude-session"]:
@@ -110,28 +119,66 @@ class Assistant:
         # after a change, including one a tool made last turn, or after an aborted turn).
         version = self.knowledge.version
         knowledge_text = None if version == self._sent_knowledge_version else self.knowledge.render()
-        parts: list[str] = []
         try:
             # Set before query(): a PreCompact hook may reset it while the turn runs.
             self._sent_knowledge_version = version
             await self._client.query(
                 build_turn_message(knowledge_text, brief_index(self.briefs), text, version)
             )
-            async for message in self._client.receive_response():
-                if isinstance(message, AssistantMessage):
-                    if message.error:
-                        parts.append(f"[Model error: {message.error}]")
-                    parts += [b.text for b in message.content if isinstance(b, TextBlock)]
-                elif isinstance(message, ResultMessage) and message.is_error:
-                    detail = "; ".join(message.errors or []) or message.subtype
-                    parts.append(f"[The request did not finish cleanly: {detail}]")
+            parts, _ = await self._collect()
         except BaseException:  # includes CancelledError / KeyboardInterrupt
             self._sent_knowledge_version = None  # unsure what the model saw; resend next turn
             await self._abort_turn()
             raise
 
-        return Reply(
-            text="\n\n".join(p.strip() for p in parts if p.strip()),
-            artifacts=list(self.turn.artifacts),
-            actions=list(self.turn.actions),
-        )
+        reply_text = self._join(parts)
+        # Snapshot now: the follow-up must not change what this turn reports.
+        artifacts, actions = list(self.turn.artifacts), list(self.turn.actions)
+        if self.knowledge.pricing_restricted:
+            reply_text = await self._guard_pricing(reply_text)
+
+        return Reply(text=reply_text, artifacts=artifacts, actions=actions)
+
+    @staticmethod
+    def _join(parts: list[str]) -> str:
+        return "\n\n".join(p.strip() for p in parts if p.strip())
+
+    async def _collect(self) -> tuple[list[str], bool]:
+        """Read one response: its text parts, and whether the model/stream reported an error."""
+        parts: list[str] = []
+        failed = False
+        async for message in self._client.receive_response():
+            if isinstance(message, AssistantMessage):
+                if message.error:
+                    failed = True
+                    parts.append(f"[Model error: {message.error}]")
+                parts += [b.text for b in message.content if isinstance(b, TextBlock)]
+            elif isinstance(message, ResultMessage) and message.is_error:
+                failed = True
+                detail = "; ".join(message.errors or []) or message.subtype
+                parts.append(f"[The request did not finish cleanly: {detail}]")
+        return parts, failed
+
+    async def _guard_pricing(self, text: str) -> str:
+        """Pricing is under review, so a chat reply must not state a price as current. Send at
+        most one corrective follow-up. It is not a knowledge-sending turn, so it leaves
+        `_sent_knowledge_version` alone."""
+        claims = current_price_claims(text)
+        if not claims:
+            return text
+        try:
+            await self._client.query(PRICING_FOLLOWUP.format(claim=claims[0]))
+            parts, failed = await self._collect()
+        except Exception:
+            await self._abort_turn()
+            return f"{text}\n\n{PRICING_NOTE}"
+        except BaseException:
+            self._sent_knowledge_version = None
+            await self._abort_turn()
+            raise
+        rewrite = self._join(parts)
+        if failed or not rewrite:
+            return f"{text}\n\n{PRICING_NOTE}"
+        if current_price_claims(rewrite):
+            return f"{rewrite}\n\n{PRICING_NOTE}"
+        return rewrite
