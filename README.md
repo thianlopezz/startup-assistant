@@ -47,6 +47,7 @@ Run the assistant:
 - `--reset`: delete the data dir first; it is re-seeded from the HarborDesk company data.
 - `--model`: model to use (default: SDK default).
 - Type `exit` or `quit` (or Ctrl-D) to leave. Data survives restarts.
+- Pasting multi-line text (for example the founder update) sends it as one message: the prompt uses `prompt_toolkit` with bracketed paste, so only your own Enter submits. When input is piped, each line is a separate message.
 
 Each reply prints the model's text, then any brief as a boxed panel, then a footer such as
 `[Changed: Company knowledge updated → v1]` or `[No saved data changed]`. The footer comes from the

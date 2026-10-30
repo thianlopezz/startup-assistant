@@ -11,6 +11,7 @@ dependencies = [
     "claude-agent-sdk>=0.2.175",
     "pydantic>=2",
     "rich>=13",
+    "prompt_toolkit>=3",
 ]
 
 [project.optional-dependencies]

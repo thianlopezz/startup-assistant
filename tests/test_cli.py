@@ -110,3 +110,29 @@ def test_repl_survives_markup_in_error_and_interrupt(monkeypatch, tmp_path, caps
     assert "bad [/usr/bin/claude] path" in out
     assert "Interrupted" in out
     assert "echo hi" in out
+
+
+class _RecordingAssistant(_FakeAssistant):
+    received: list[str] = []
+
+    async def handle(self, text):
+        _RecordingAssistant.received.append(text)
+        return Reply(text="ok")
+
+
+def test_pasted_multiline_text_is_one_message(monkeypatch, tmp_path):
+    import asyncio
+
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    _RecordingAssistant.received = []
+    monkeypatch.setattr(cli, "Assistant", _RecordingAssistant)
+    with create_pipe_input() as inp:
+        # A terminal wraps pasted text in bracketed-paste markers; the newline inside is
+        # part of the paste, and only the final Enter (\r) submits.
+        inp.send_text("\x1b[200~We're shifting our target.\nPricing is under review.\x1b[201~\r")
+        inp.send_text("exit\r")
+        session = cli.make_prompt_session(input=inp, output=DummyOutput())
+        asyncio.run(cli._repl(Console(file=open("/dev/null", "w")), tmp_path / "d", None, session))
+    assert _RecordingAssistant.received == ["We're shifting our target.\nPricing is under review."]

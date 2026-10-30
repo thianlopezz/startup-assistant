@@ -3,8 +3,11 @@
 import argparse
 import asyncio
 import shutil
+import sys
 from pathlib import Path
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.markup import escape
@@ -43,11 +46,25 @@ def reset_data(data_dir: Path) -> None:
     shutil.rmtree(data_dir, ignore_errors=True)
 
 
-async def _repl(console: Console, data_dir: Path, model: str | None) -> None:
+def make_prompt_session(**kwargs) -> PromptSession:
+    """Interactive prompt with bracketed paste: a pasted multi-line block stays one message
+    and only the user's own Enter submits it."""
+    return PromptSession(**kwargs)
+
+
+async def _read_message(console: Console, session: PromptSession | None) -> str:
+    if session is None:  # piped stdin (scripts, tests): one line per message
+        return console.input("[bold cyan]You>[/] ")
+    return await session.prompt_async(HTML("<ansicyan><b>You&gt;</b></ansicyan> "))
+
+
+async def _repl(
+    console: Console, data_dir: Path, model: str | None, session: PromptSession | None = None
+) -> None:
     async with Assistant(data_dir, model) as assistant:
         while True:
             try:
-                text = console.input("[bold cyan]You>[/] ").strip()
+                text = (await _read_message(console, session)).strip()
             except (EOFError, KeyboardInterrupt):
                 console.print()
                 break
@@ -77,5 +94,6 @@ def main(argv: list[str] | None = None) -> int:
         "Type 'exit' or 'quit' (or Ctrl-D) to leave.",
         expand=False,
     ))
-    asyncio.run(_repl(console, args.data_dir, args.model))
+    session = make_prompt_session() if sys.stdin.isatty() else None
+    asyncio.run(_repl(console, args.data_dir, args.model, session))
     return 0
