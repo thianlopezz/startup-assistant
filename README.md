@@ -39,7 +39,19 @@ More:
 
 ## Work after the cutoff
 
-TODO. If nothing was done after the cutoff, say so.
+Everything above this section is the state at the 3-hour cutoff ([`b88619f`](https://github.com/thianlopezz/startup-assistant/commit/b88619f)). Two improvements are planned after the cutoff. They will go in separate commits, and this section will be updated with what changed, why, the time spent, and how to reach that version.
+
+1. **RAG integration (retrieval over company material).** Today the assistant sends the whole company knowledge block to the model, which works because HarborDesk's data is a single page. The plan is to index the company knowledge, the founder updates, the marketing notes and the saved briefs, and retrieve only the passages relevant to each request. Answers and briefs would then cite where a fact came from. This keeps the assistant grounded as the material grows (more documents, more campaigns, longer history) without sending everything on every turn. It should also make "known fact vs assumption" easier to check, because each fact would point to its source.
+2. **Web deployment with Docker.** Run the same assistant in a browser so reviewers can try it without installing anything. The plan:
+   - the existing chat interface served as a web terminal (`ttyd`) from a Docker image
+   - a persistent volume for the knowledge and brief data
+   - an `ANTHROPIC_API_KEY` for model access instead of a personal Claude login
+   - a username/password prompt in front of it
+   - published over HTTPS through a Traefik reverse proxy on a personal server
+
+   Each browser session runs its own assistant process on the shared data, which is where the file locking added before the cutoff matters.
+
+Status: planned, not yet built.
 
 ## What was built, setup and run
 
