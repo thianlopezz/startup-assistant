@@ -115,6 +115,19 @@ fills them in.
   code path either way. README documents both.
 - Work is split into parallel git worktrees run in separate sessions, then merged.
 
+## Libraries (decided by Thian: prefer existing tools, don't reinvent)
+
+| Need | Use | Instead of |
+|---|---|---|
+| Agent loop, tool calling, auth (session or API key), multi-turn session | `claude-agent-sdk` (`ClaudeSDKClient`, `@tool`, `create_sdk_mcp_server`) | a hand-written tool loop |
+| Contracts, validation, JSON save/load | `pydantic` v2 models (`model_dump_json` / `model_validate_json`, `Field` constraints such as exactly 2 channels) | dataclasses plus hand-written (de)serialization and checks |
+| Terminal output | `rich` (`Markdown`, `Panel`, `Console.input`) for briefs, the actions footer and the prompt | hand-formatted print output |
+| Tests and checks | `pytest` | — |
+
+So the `contracts.py` types below are pydantic `BaseModel`s, not dataclasses, and the stores keep
+one pydantic "file" model per JSON file. Builders may add another well-known library if it clearly
+saves time, and should say so in their report.
+
 ## Architecture (Claude's calls, approved as a direction)
 
 Command-line chat. One agent per request with four custom in-process tools (SDK MCP server via
@@ -147,12 +160,12 @@ README.md                         # Track C draft, finalized in step 3
 
 ```python
 # contracts.py
-@dataclass
+# pydantic BaseModel
 class Channel:
     name: str
     reason: str
 
-@dataclass
+# pydantic BaseModel
 class BriefDraft:                 # what the model submits to save_brief
     title: str
     audience: str                 # who we target (company profile)
@@ -164,7 +177,7 @@ class BriefDraft:                 # what the model submits to save_brief
     assumptions: list[str]
     open_questions: list[str]
 
-@dataclass
+# pydantic BaseModel
 class BriefRecord:                # what BriefStore persists
     version: int                  # 1, 2, 3 … global, monotonically increasing
     created_at: str               # ISO 8601
@@ -175,7 +188,7 @@ class BriefRecord:                # what BriefStore persists
     draft: BriefDraft
     markdown: str                 # rendered once at save time; retrieval returns exactly this
 
-@dataclass
+# pydantic BaseModel
 class KnowledgeUpdate:
     version: int                  # 1, 2, … (0 = seed)
     created_at: str
@@ -185,7 +198,7 @@ class KnowledgeUpdate:
                                   #       "pricing": "Under review — do not mention in campaign materials."}
     new_rules: list[str]          # e.g. ["Leave prices out of campaign materials."]
 
-@dataclass
+# pydantic BaseModel
 class Reply:                      # what Assistant.handle returns to the CLI
     text: str                     # the model's message
     artifacts: list[str]          # verbatim markdown to print (saved/retrieved briefs)
