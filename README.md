@@ -84,9 +84,9 @@ Example outputs (all from live-model runs):
 ## Assumptions, design decisions and shortcuts
 
 - **Pricing scope.** The "no pricing" rule covers campaign materials (briefs and draft emails), as the founder wrote it. After the update, the `pricing` field reads "under review". A direct pricing question in chat gets that status, and the old price is mentioned only as out of date. `save_brief` enforces the rule in code; chat replies rely on the prompt.
-- **Guardrails in code, not only in the prompt.** `save_brief` rejects a brief that has anything other than 2 channels, an email body over 150 words, any "half"/"halve"/"50%" claim, or, while pricing is restricted, any `$`, "N per month" or the words price/pricing. The model gets the error and retries. These checks are deliberately blunt: "half-day workshop" would be rejected too.
+- **Guardrails in code, not only in the prompt.** `save_brief` rejects a brief that has anything other than 2 channels, an email body over 150 words, a reduction claim with "half" ("cuts … in half", "by half", "half the time", "halve", "50%"; "half-day" is fine), or, while pricing is restricted, any `$`, "N per month", the words price/pricing or "commercial terms". The model gets the error and retries. The prompt also tells it not to mention that pricing was left out.
 - **Footer written by code.** The `[Changed: …]` footer comes from tool code, not from the model, so the assistant cannot claim a brief was revised when only knowledge changed.
-- **One brief series.** Briefs are a single numbered series (v1, v2, …); each revision points at the version it revises, and the newest is current. There are no separately named campaigns and no tool to fetch an old version (the data is there; `BriefStore.get(n)` exists).
+- **One brief series.** Briefs are a single numbered series (v1, v2, …); each revision points at the version it revises, and the newest is current. There are no separately named campaigns; any version can be shown with `get_brief(n)` ("show me version 1"), labelled as superseded.
 - **Knowledge updates.** An update records the founder's message word for word, a summary, changes to the 9 profile fields, and new rules. Facts that don't fit a field go in as rules.
 - **Storage.** Plain JSON files with an atomic replace-on-write. Single process, no locking, no recovery from a corrupt file.
 - **Assumptions over questions.** For briefs, the assistant goes ahead and lists assumptions and open questions instead of asking first. Retrieval never generates anything: with nothing saved it says so and offers to create a brief.
@@ -95,8 +95,8 @@ Example outputs (all from live-model runs):
 
 ## How the assistant chooses actions, and how knowledge stays separate from deliverables
 
-- One agent turn per request, with four custom in-process tools: update company knowledge, save a
-  brief, get the latest brief, list briefs. The model chooses among them (or none, to just answer)
+- One agent turn per request, with five custom in-process tools: update company knowledge, save a
+  brief, get the latest brief, get a specific brief version, list briefs. The model chooses among them (or none, to just answer)
   from the request; the system prompt says to do only what was asked when a request is ambiguous
   between remembering a fact and revising a brief.
 - Company knowledge (`knowledge.json`: seed profile, founder updates, rules) and campaign briefs
@@ -108,7 +108,7 @@ Example outputs (all from live-model runs):
 
 ## What was verified and what happened
 
-- **Unit tests:** `pytest -q` → 48 passed, 1 skipped (the live test). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error) and the CLI (footer, error handling).
+- **Unit tests:** `pytest -q` → 85 passed, 1 skipped (the live test). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error) and the CLI (footer, error handling).
 - **Live test:** `RUN_LIVE=1 pytest -m live` → 1 passed. Answering a question uses no tool and changes nothing.
 - **Live demo:** `scripts/demo.py --check`.
   - The first run gave 4/5. The "retrieval printed the stored brief verbatim" check failed. The brief *was* verbatim, but the printed block starts with a version header line and the check demanded exact equality. I fixed the check to find the stored text inside the printed block, and the final run passed 5/5. Footers per turn: none / v1 saved / knowledge v1 / none / v2 saved (revises v1) / none.
@@ -123,17 +123,24 @@ Example outputs (all from live-model runs):
   - reworded "half" claims got through
   - a retrieved brief could linger as "CURRENT" after a new save
   - an interrupted turn could leak into the next turn
+- **Second round** (parallel agents again, after a manual test):
+  - A pasted multi-line message was split into several messages. Fixed with `prompt_toolkit` bracketed paste, plus a test.
+  - Replies were hard to tell apart from your own messages. Turns are now labelled You / Assistant.
+  - Live brief v2 hinted at pricing ("commercial terms are left out"). The prompt and code now block this.
+  - "half-day" was rejected. Only reduction claims are now.
+  - New `get_brief(n)` tool.
+  - Ctrl-C cancels the running reply instead of quitting. It works for repeated Ctrl-C too, with a test that sends real SIGINTs.
+  - Turn cleanup now has automated tests.
+  - Company knowledge is sent only when it changed.
+  - A shared atomic-write helper.
+  - Re-ran the live demo: 5/5. The extended wording run included a revision and "show me version 1".
 
 ## Unfinished and next steps
 
-- The keyword guardrails can reject harmless wording ("half-day"). A second model call acting as a checker, or a list of allowed phrases, would be more precise.
-- No tool to show an older version or compare versions (`get_brief(n)`), and no named campaigns.
-- Pricing in chat is guarded by the prompt only.
-- The interrupt-and-drain path for a turn cancelled mid-way is checked by hand, with no automated test.
-- Context grows within a long session, because the full knowledge block is re-sent every turn.
-- Ctrl-C while the assistant is replying ends the REPL instead of printing "Interrupted": the interrupt arrives as `CancelledError` through `asyncio.run`. Data already saved is safe.
-- Brief v2's assumptions say "commercial terms are left out". That refers to pricing indirectly, and the keyword check doesn't catch it. A prompt line saying not to mention omitted pricing would fix it.
-- Small cleanups: a shared atomic-write helper (duplicated in two stores), and a stronger `render()` test.
+- The guardrails are keyword checks. A reworded hint at pricing or a time-saving claim that avoids the keywords (for example a bare "time in half" with no verb) gets past the code check and relies on the prompt. A second model call acting as a checker would be more thorough.
+- No named campaigns or side-by-side version comparison.
+- Pricing in chat answers is guarded by the prompt only.
+- In piped mode, a Ctrl-C at the prompt before the first reply doesn't interrupt the read. In a real terminal it exits normally.
 
 ## AI tools and models used
 

@@ -8,6 +8,9 @@ MSGS = [
     "btw, remember we no longer sell to agencies. We now go after B2B software companies with 100-500 people, and the Head of Customer Success is the buyer. Also keep prices out of any marketing for now.",
     "what do we charge?",
     "who do we sell to these days?",
+    "Write a campaign brief for the new audience and save it.",
+    "Make the email shorter and friendlier, and save that as a revision.",
+    "Show me version 1 of the brief.",
 ]
 
 async def main(d):
