@@ -13,6 +13,10 @@ from startup_assistant.reply_guard import current_price_claims
         "The subscription is 299 a month.",
         "It's USD 299 monthly.",
         "Costs $ 299 today.",
+        "Starts at 299/mo.",
+        "Starts at 299 dollars a month.",
+        "It's 299 euros per month.",
+        "Plans are 299 EUR monthly.",
     ],
 )
 def test_flags_current_prices(text):
@@ -33,6 +37,7 @@ def test_flags_current_prices(text):
         "Expect 2 a month.",
         "Do 3/mo check-ins.",
         "Expect 2 check-ins a month.",
+        "Pricing is under review. We run 4 per month.",
     ],
 )
 def test_ignores_past_or_unrelated(text):
@@ -46,3 +51,8 @@ def test_splits_sentences_and_newlines():
 
 def test_empty():
     assert current_price_claims("") == []
+
+
+def test_money_word_in_previous_sentence():
+    text = "What does it cost? 299 per month."
+    assert current_price_claims(text) == ["299 per month"]

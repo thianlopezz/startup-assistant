@@ -3,7 +3,8 @@
 import re
 
 _CURRENCY = re.compile(
-    r"(?:[$€£]|\bUSD\b)\s?\d|\d\s?(?:USD\b|[€£])",
+    r"(?:[$€£]|\b(?:USD|EUR)\b)\s?\d"
+    r"|\d\s?(?:(?:USD|EUR|dollars?|euros?|bucks)\b|[€£])",
     re.IGNORECASE,
 )
 _PER_PERIOD = re.compile(
@@ -11,7 +12,7 @@ _PER_PERIOD = re.compile(
     re.IGNORECASE,
 )
 _MONEY_WORD = re.compile(
-    r"\b(?:prices?|pricing|costs?|charges?|fees?|plans?|subscriptions?|pay|paid|billed|billing)\b",
+    r"\b(?:starts?\s+at|starting\s+at|prices?|pricing|costs?|charges?|fees?|plans?|subscriptions?|pay|paid|billed|billing)\b",
     re.IGNORECASE,
 )
 # Past tense or "under review" wording means the sentence is not claiming a current price.
@@ -23,17 +24,24 @@ _PAST_OR_REVIEW = re.compile(
 _SENTENCE_END = re.compile(r"[.!?\n]")
 
 
-def _is_price_claim(sentence: str) -> bool:
+def _is_price_claim(sentence: str, previous: str = "") -> bool:
     if _CURRENCY.search(sentence):
         return True
-    return bool(_PER_PERIOD.search(sentence) and _MONEY_WORD.search(sentence))
+    if not _PER_PERIOD.search(sentence):
+        return False
+    if _MONEY_WORD.search(sentence):
+        return True
+    # Money word in the immediately preceding sentence, unless that one is past/under review.
+    return bool(_MONEY_WORD.search(previous) and not _PAST_OR_REVIEW.search(previous))
 
 
 def current_price_claims(text: str) -> list[str]:
     """Sentences that state a price as current: a money amount and no past/under-review marker."""
     claims = []
+    previous = ""
     for sentence in _SENTENCE_END.split(text):
         sentence = sentence.strip()
-        if sentence and _is_price_claim(sentence) and not _PAST_OR_REVIEW.search(sentence):
+        before, previous = previous, sentence or previous
+        if sentence and _is_price_claim(sentence, before) and not _PAST_OR_REVIEW.search(sentence):
             claims.append(sentence)
     return claims
