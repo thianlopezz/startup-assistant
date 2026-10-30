@@ -1,6 +1,7 @@
 """Versioned company knowledge: the seed profile plus founder updates, stored as JSON."""
 
 import os
+import re
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,9 @@ from pydantic import BaseModel
 
 from startup_assistant.contracts import KnowledgeUpdate
 from startup_assistant.seed import SEED_MARKETING_NOTES, SEED_PROFILE
+
+
+_PRICE_RULE = re.compile(r"\bpric(?:e|es|ing)\b", re.IGNORECASE)
 
 
 class KnowledgeFile(BaseModel):
@@ -42,7 +46,11 @@ class KnowledgeStore:
 
     @property
     def pricing_restricted(self) -> bool:
-        return any("pricing" in u.field_changes for u in self._load().updates)
+        updates = self._load().updates
+        if any("pricing" in u.field_changes for u in updates):
+            return True
+        # A rule like "leave prices out of campaign materials" also turns it on.
+        return any(_PRICE_RULE.search(rule) for u in updates for rule in u.new_rules)
 
     def current_profile(self) -> dict[str, str]:
         profile = dict(SEED_PROFILE)
