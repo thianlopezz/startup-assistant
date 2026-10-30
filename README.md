@@ -24,7 +24,7 @@ TODO. If nothing was done after the cutoff, say so.
 
 ## What was built, setup and run
 
-Requirements: Python 3.14 (the package declares `>=3.10`; 3.14 is what it was built and tested on).
+Requirements: Python 3.11+ (built and tested on 3.14).
 
 ```bash
 python3.14 -m venv .venv
@@ -49,18 +49,20 @@ Run the assistant:
 - Type `exit` or `quit` (or Ctrl-D) to leave. Data survives restarts.
 
 Each reply prints the model's text, then any brief as a boxed panel, then a footer such as
-`[Changed: Company knowledge updated -> v1]` or `[No saved data changed]`. The footer comes from the
+`[Changed: Company knowledge updated → v1]` or `[No saved data changed]`. The footer comes from the
 tool code, not from the model, so it cannot overclaim.
 
 Run the scripted demo (the six required interactions, with a real process restart before the last):
 
 ```bash
-.venv/bin/python scripts/demo.py                  # model-backed; writes examples/demo-data and examples/transcript.md
-.venv/bin/python scripts/demo.py --check          # same run, then verify the saved data
+# Model-backed run + checks, written to /tmp so the committed examples/ outputs are kept:
+.venv/bin/python scripts/demo.py --check --data-dir /tmp/hd-demo --transcript /tmp/hd-transcript.md
 .venv/bin/python scripts/demo.py --fake --check   # canned replies, no model needed
 ```
 
-Options: `--data-dir` (default `examples/demo-data`), `--phase 1|2|all` (default `all`: reset, run
+With no `--data-dir`/`--transcript` it regenerates `examples/demo-data` and `examples/transcript.md` in place (that is how the committed examples were made).
+
+Options: `--data-dir` (default `examples/demo-data`), `--transcript` (default `examples/transcript.md`), `--phase 1|2|all` (default `all`: reset, run
 turns 1-5 in this process, then turn 6 in a new subprocess), `--check`, `--fake`, `--model`.
 `--check` prints PASS/FAIL per check and exits non-zero on any FAIL. It reads the data only through
 the store classes.
@@ -128,6 +130,8 @@ Example outputs (all from live-model runs):
 - Pricing in chat is guarded by the prompt only.
 - The interrupt-and-drain path for a turn cancelled mid-way is checked by hand, with no automated test.
 - Context grows within a long session, because the full knowledge block is re-sent every turn.
+- Ctrl-C while the assistant is replying ends the REPL instead of printing "Interrupted": the interrupt arrives as `CancelledError` through `asyncio.run`. Data already saved is safe.
+- Brief v2's assumptions say "commercial terms are left out". That refers to pricing indirectly, and the keyword check doesn't catch it. A prompt line saying not to mention omitted pricing would fix it.
 - Small cleanups: a shared atomic-write helper (duplicated in two stores), and a stronger `render()` test.
 
 ## AI tools and models used
