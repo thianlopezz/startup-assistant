@@ -409,3 +409,22 @@ def test_get_brief_copy_dropped_when_new_version_saved(stores):
     run(tools["get_brief"].handler({"version": 1}))
     run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
     assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
+
+
+def test_retrieved_copies_do_not_accumulate_across_turns(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "md", "created", None, 0, "r")
+    turn = TurnLog(user_text="turn 1")
+    tools = make_tools(knowledge, briefs, turn)
+    run(tools["get_latest_brief"].handler({}))
+    run(tools["get_brief"].handler({"version": 1}))
+    assert len(turn.retrieved) == 2
+    # Assistant.handle resets the turn in place
+    turn.user_text = "turn 2"
+    turn.actions.clear()
+    turn.artifacts.clear()
+    run(tools["get_brief"].handler({"version": 1}))
+    assert len(turn.retrieved) == 1  # only this turn's copy
+    run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
+    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
+    assert turn.retrieved == []
