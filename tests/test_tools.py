@@ -792,6 +792,39 @@ def test_checker_rejection_count_resets_with_the_turn(stores, monkeypatch):
     assert briefs.list() == []
 
 
+BUSY = "The data store is busy (another assistant is saving). Nothing was saved; try again in a moment."
+
+
+def _busy(*args, **kwargs):
+    import filelock
+
+    raise filelock.Timeout("x")
+
+
+def test_save_brief_lock_timeout_returns_clear_error(stores, monkeypatch):
+    knowledge, briefs = stores
+    monkeypatch.setattr(briefs, "save", _busy)
+    turn = TurnLog(user_text="make a brief")
+    result = run(make_tools(knowledge, briefs, turn)["save_brief"].handler(
+        {"draft": make_draft().model_dump()}
+    ))
+    assert result["is_error"] is True
+    assert _text(result) == BUSY
+    assert turn.actions == [] and turn.artifacts == []
+
+
+def test_update_knowledge_lock_timeout_returns_clear_error(stores, monkeypatch):
+    knowledge, briefs = stores
+    monkeypatch.setattr(knowledge, "apply_update", _busy)
+    turn = TurnLog(user_text="new audience")
+    result = run(make_tools(knowledge, briefs, turn)["update_company_knowledge"].handler(
+        {"summary": "s", "field_changes": {}, "new_rules": ["leave prices out"]}
+    ))
+    assert result["is_error"] is True
+    assert _text(result) == BUSY
+    assert turn.actions == [] and turn.artifacts == []
+
+
 def test_revise_without_campaign_uses_latest_briefs_campaign(stores):
     knowledge, briefs = stores
     briefs.save(make_draft(), "B1", "created", None, 0, "r", campaign="Spring launch")
