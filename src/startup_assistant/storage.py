@@ -2,7 +2,29 @@
 
 import os
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+from filelock import FileLock
+
+LOCK_TIMEOUT_SECONDS = 10
+
+
+@contextmanager
+def locked(path: Path | None) -> Iterator[None]:
+    """Hold an exclusive cross-process lock for read-modify-write of `path`.
+
+    The lock file sits next to `path` (`<name>.lock`). Plain reads don't need it, because
+    writes go through atomic_write_text. A path of None (in-memory test fakes) takes no lock.
+    """
+    if path is None:
+        yield
+        return
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(path) + ".lock", timeout=LOCK_TIMEOUT_SECONDS):
+        yield
 
 
 def atomic_write_text(path: Path, text: str) -> None:

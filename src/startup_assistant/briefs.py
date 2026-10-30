@@ -10,7 +10,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from startup_assistant.contracts import DEFAULT_CAMPAIGN, BriefDraft, BriefRecord
-from startup_assistant.storage import atomic_write_text
+from startup_assistant.storage import atomic_write_text, locked
 
 __all__ = ["DEFAULT_CAMPAIGN", "BriefStore", "BriefsFile", "campaign_key"]
 
@@ -53,26 +53,27 @@ class BriefStore:
     ) -> BriefRecord:
         """Save the next version in `campaign`. Raises ValueError if `revises` names a version
         that campaign doesn't have."""
-        data = self._load()
-        name = campaign.strip() or DEFAULT_CAMPAIGN
-        existing = self._in(data.records, name)
-        if existing:
-            name = existing[0].campaign  # keep the display name from the first save
-        if revises is not None and not any(r.version == revises for r in existing):
-            raise ValueError(f'Campaign "{name}" has no brief v{revises} to revise.')
-        record = BriefRecord(
-            version=len(existing) + 1,
-            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
-            kind=kind,
-            revises=revises,
-            knowledge_version=knowledge_version,
-            request=request,
-            draft=draft,
-            markdown=markdown,
-            campaign=name,
-        )
-        data.records.append(record)
-        self._write(data)
+        with locked(self.path):
+            data = self._load()
+            name = campaign.strip() or DEFAULT_CAMPAIGN
+            existing = self._in(data.records, name)
+            if existing:
+                name = existing[0].campaign  # keep the display name from the first save
+            if revises is not None and not any(r.version == revises for r in existing):
+                raise ValueError(f'Campaign "{name}" has no brief v{revises} to revise.')
+            record = BriefRecord(
+                version=len(existing) + 1,
+                created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                kind=kind,
+                revises=revises,
+                knowledge_version=knowledge_version,
+                request=request,
+                draft=draft,
+                markdown=markdown,
+                campaign=name,
+            )
+            data.records.append(record)
+            self._write(data)
         return record
 
     def latest(self, campaign: str | None = None) -> BriefRecord | None:
