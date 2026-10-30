@@ -29,6 +29,9 @@ def test_flags_current_prices(text):
         "Previously $299/mo.",
         "It is no longer $299 a month.",
         "We send 4 updates per month.",
+        "We run 4 per month.",  # number directly before "per month" (old false positive)
+        "Expect 2 a month.",
+        "Do 3/mo check-ins.",
         "Expect 2 check-ins a month.",
     ],
 )
