@@ -36,6 +36,8 @@ class Assistant:
         self.knowledge: KnowledgeStore | None = None
         self.briefs: BriefStore | None = None
         self._client: ClaudeSDKClient | None = None
+        # Knowledge version the model has already seen in full in this client session.
+        self._sent_knowledge_version: int | None = None
 
     def _options(self) -> ClaudeAgentOptions:
         server = build_server(self.knowledge, self.briefs, self.turn)
@@ -51,11 +53,16 @@ class Assistant:
             model=self.model,
         )
 
+    def _make_client(self) -> ClaudeSDKClient:
+        """Seam for tests: they return a fake client here."""
+        return ClaudeSDKClient(options=self._options())
+
     async def __aenter__(self) -> "Assistant":
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.knowledge = KnowledgeStore(self.data_dir / "knowledge.json")
         self.briefs = BriefStore(self.data_dir / "briefs.json")
-        self._client = ClaudeSDKClient(options=self._options())
+        self._client = self._make_client()
+        self._sent_knowledge_version = None
         await self._client.connect()
         return self
 
@@ -86,11 +93,16 @@ class Assistant:
         self.turn.actions.clear()
         self.turn.artifacts.clear()
 
+        # Send the full knowledge only when the model hasn't seen this version yet (first turn,
+        # after a change, including one a tool made last turn, or after an aborted turn).
+        version = self.knowledge.version
+        knowledge_text = None if version == self._sent_knowledge_version else self.knowledge.render()
         parts: list[str] = []
         try:
             await self._client.query(
-                build_turn_message(self.knowledge.render(), brief_index(self.briefs), text)
+                build_turn_message(knowledge_text, brief_index(self.briefs), text, version)
             )
+            self._sent_knowledge_version = version
             async for message in self._client.receive_response():
                 if isinstance(message, AssistantMessage):
                     if message.error:
@@ -100,6 +112,7 @@ class Assistant:
                     detail = "; ".join(message.errors or []) or message.subtype
                     parts.append(f"[The request did not finish cleanly: {detail}]")
         except BaseException:  # includes CancelledError / KeyboardInterrupt
+            self._sent_knowledge_version = None  # unsure what the model saw; resend next turn
             await self._abort_turn()
             raise
 
