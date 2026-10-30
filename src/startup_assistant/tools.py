@@ -45,6 +45,9 @@ class TurnLog(BaseModel):
     user_text: str = ""
     actions: list[str] = []
     artifacts: list[str] = []
+    # Copies added by get_latest_brief/get_brief. Assistant.handle clears `artifacts` in place
+    # each turn but not this list, so tools prune it against `artifacts` (_forget_stale).
+    retrieved: list[str] = []
 
 
 def word_count(text: str) -> int:
@@ -230,9 +233,11 @@ def make_tools(
     knowledge: KnowledgeStore, briefs: BriefStore, turn: TurnLog
 ) -> dict[str, SdkMcpTool[Any]]:
     """The five tools, keyed by short name. Handlers close over the stores and the TurnLog."""
-    # Artifacts added by get_latest_brief/get_brief. Turn artifacts are reset each turn, so matching
-    # by value only ever removes copies fetched in the current turn.
-    retrieved: list[str] = []
+    retrieved = turn.retrieved
+
+    def forget_stale() -> None:
+        """Drop copies from earlier turns: the turn reset empties `artifacts`, not `retrieved`."""
+        retrieved[:] = [a for a in retrieved if a in turn.artifacts]
 
     @tool(
         "update_company_knowledge",
@@ -303,8 +308,10 @@ def make_tools(
             knowledge_version=knowledge.version,
             request=turn.user_text,
         )
-        # Copies fetched by get_latest_brief/get_brief earlier in this turn (e.g. to revise) aren't what
-        # the founder asked to see once a new version exists.
+        # Copies fetched by get_latest_brief/get_brief earlier in this turn (e.g. to revise) aren't
+        # what the founder asked to see once a new version exists. This also drops a v1 the
+        # founder asked to see in the same turn ("show me v1 and draft a new brief"): known, kept.
+        forget_stale()
         turn.artifacts[:] = [a for a in turn.artifacts if a not in retrieved]
         retrieved.clear()
         if revises is not None:
@@ -326,6 +333,7 @@ def make_tools(
         _EMPTY_SCHEMA,
     )
     async def get_latest_brief(args: dict[str, Any]) -> dict[str, Any]:
+        forget_stale()
         record = briefs.latest()
         if record is None:
             return _text("No brief saved yet.")
@@ -348,6 +356,7 @@ def make_tools(
         GET_BRIEF_SCHEMA,
     )
     async def get_brief(args: dict[str, Any]) -> dict[str, Any]:
+        forget_stale()
         version = int(args["version"])
         record = briefs.get(version)
         if record is None:
