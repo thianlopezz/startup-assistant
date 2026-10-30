@@ -88,6 +88,7 @@ Example outputs (all from live-model runs):
 - **Footer written by code.** The `[Changed: …]` footer comes from tool code, not from the model, so the assistant cannot claim a brief was revised when only knowledge changed.
 - **One brief series.** Briefs are a single numbered series (v1, v2, …); each revision points at the version it revises, and the newest is current. There are no separately named campaigns; any version can be shown with `get_brief(n)` ("show me version 1"), labelled as superseded.
 - **Knowledge updates.** An update records the founder's message word for word, a summary, changes to the 9 profile fields, and new rules. Facts that don't fit a field go in as rules.
+- **Context per turn.** Turns always carry the brief index and the founder's message. The full company knowledge goes only on the first turn of a session, after any change, after an aborted turn, or after the SDK compacts the conversation; otherwise the turn says "Unchanged since vN". This departs from the original design (knowledge in every request) to keep long sessions small. It was a deliberate choice.
 - **Storage.** Plain JSON files with an atomic replace-on-write. Single process, no locking, no recovery from a corrupt file.
 - **Assumptions over questions.** For briefs, the assistant goes ahead and lists assumptions and open questions instead of asking first. Retrieval never generates anything: with nothing saved it says so and offers to create a brief.
 - **Libraries over hand-written code.** The Claude Agent SDK (agent loop, tool calls, login), pydantic (types, validation, JSON) and rich (terminal output).
@@ -131,7 +132,7 @@ Example outputs (all from live-model runs):
   - New `get_brief(n)` tool.
   - Ctrl-C cancels the running reply instead of quitting. It works for repeated Ctrl-C too, with a test that sends real SIGINTs.
   - Turn cleanup now has automated tests.
-  - Company knowledge is sent only when it changed.
+  - Company knowledge is sent in full only on the first turn, when it changed, after an aborted turn, or after the SDK compacts the conversation. Other turns say "Unchanged since vN".
   - A shared atomic-write helper.
   - Re-ran the live demo: 5/5. The extended wording run included a revision and "show me version 1".
 

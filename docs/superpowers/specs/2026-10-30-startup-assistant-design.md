@@ -280,6 +280,8 @@ by an update or any rule mentions leaving prices out. (Builder may simplify, e.g
 
 ### Per-turn context
 
+> Amended in phase 2 (Thian's choice, to keep long sessions small): the full knowledge block is sent on the first turn of a session, after any knowledge change, after an aborted turn, and after SDK compaction; other turns carry `Unchanged since vN (sent earlier in this conversation).` The brief index is always sent.
+
 Each request is sent as: current knowledge block (`KnowledgeStore.render()`), brief index
 (`list_briefs` output), then the founder's message. Conversation continuity within one run uses a
 single `ClaudeSDKClient` session; across restarts, state comes only from the stores.
