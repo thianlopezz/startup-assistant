@@ -44,6 +44,15 @@ def test_reply_is_labelled_as_assistant():
     assert "Brief" in out.split("Hello there", 1)[1].split("Brief body", 1)[0]  # titled brief panel
 
 
+def test_compare_artifact_panel_titled_changes():
+    out = _render(Reply(text="Diff", artifacts=['Changes in "Spring": v1 → v2\n\nBody here']))
+    panel_top = [l for l in out.splitlines() if "╭" in l][0]
+    assert "Changes" in panel_top and "Brief" not in panel_top
+    out = _render(Reply(text="Diff", artifacts=["# Brief v2\n\nBody here"]))
+    panel_top = [l for l in out.splitlines() if "╭" in l][0]
+    assert "Brief" in panel_top and "Changes" not in panel_top
+
+
 def test_reset_removes_dir(tmp_path: Path):
     d = tmp_path / "data"
     d.mkdir()

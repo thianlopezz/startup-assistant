@@ -132,10 +132,13 @@ class Assistant:
             raise
 
         reply_text = self._join(parts)
-        # Snapshot now: the follow-up must not change what this turn reports.
         artifacts, actions = list(self.turn.artifacts), list(self.turn.actions)
         if self.knowledge.pricing_restricted:
             reply_text = await self._guard_pricing(reply_text)
+            # The rewrite is told not to call tools but can't be stopped. Anything it did
+            # must reach the footer, which must never under-report.
+            actions += [a for a in self.turn.actions if a not in actions]
+            artifacts += [a for a in self.turn.artifacts if a not in artifacts]
 
         return Reply(text=reply_text, artifacts=artifacts, actions=actions)
 
