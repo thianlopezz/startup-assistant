@@ -40,5 +40,33 @@ def test_render_marks_updated_fields(tmp_path):
     store.apply_update("t", "s", CHANGES, [])
     out = store.render()
     assert "Head of Customer Success" in out
-    assert "v1" in out
+    assert "- primary_buyer: Head of Customer Success [updated in v1]" in out
     assert "founder or operations lead" not in out
+
+
+PRICING_LINE = (
+    "Pricing restricted: leave prices and any mention of pricing out of all campaign materials."
+)
+
+
+def test_update_without_pricing_leaves_it_unrestricted(tmp_path):
+    store = KnowledgeStore(tmp_path / "knowledge.json")
+    store.apply_update(
+        "t", "s", {"primary_buyer": "Head of Customer Success"}, ["Keep the tone friendly."]
+    )
+    assert not store.pricing_restricted
+
+
+def test_render_has_pricing_line_only_when_restricted(tmp_path):
+    store = KnowledgeStore(tmp_path / "knowledge.json")
+    assert PRICING_LINE not in store.render()
+    store.apply_update("t", "s", {"primary_buyer": "Head of Customer Success"}, [])
+    assert PRICING_LINE not in store.render()
+    store.apply_update("t", "s", CHANGES, [])
+    assert PRICING_LINE in store.render()
+
+
+def test_render_has_pricing_line_when_restricted_by_rule(tmp_path):
+    store = KnowledgeStore(tmp_path / "knowledge.json")
+    store.apply_update("t", "s", {}, ["Do not mention pricing."])
+    assert PRICING_LINE in store.render()

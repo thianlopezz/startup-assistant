@@ -1,29 +1,16 @@
 """Versioned campaign briefs, stored as JSON."""
 
-import os
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel
 
 from startup_assistant.contracts import BriefDraft, BriefRecord
+from startup_assistant.storage import atomic_write_text
 
 
 class BriefsFile(BaseModel):
     records: list[BriefRecord] = []
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 class BriefStore:
@@ -56,7 +43,7 @@ class BriefStore:
             markdown=markdown,
         )
         data.records.append(record)
-        _atomic_write(self.path, data.model_dump_json(indent=2))
+        atomic_write_text(self.path, data.model_dump_json(indent=2))
         return record
 
     def latest(self) -> BriefRecord | None:

@@ -1,8 +1,6 @@
 """Versioned company knowledge: the seed profile plus founder updates, stored as JSON."""
 
-import os
 import re
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,6 +8,7 @@ from pydantic import BaseModel
 
 from startup_assistant.contracts import KnowledgeUpdate
 from startup_assistant.seed import SEED_MARKETING_NOTES, SEED_PROFILE
+from startup_assistant.storage import atomic_write_text
 
 
 _PRICE_RULE = re.compile(r"\bpric(?:e|es|ing)\b", re.IGNORECASE)
@@ -17,18 +16,6 @@ _PRICE_RULE = re.compile(r"\bpric(?:e|es|ing)\b", re.IGNORECASE)
 
 class KnowledgeFile(BaseModel):
     updates: list[KnowledgeUpdate] = []
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
 
 
 class KnowledgeStore:
@@ -80,7 +67,7 @@ class KnowledgeStore:
             new_rules=list(new_rules),
         )
         data.updates.append(update)
-        _atomic_write(self.path, data.model_dump_json(indent=2))
+        atomic_write_text(self.path, data.model_dump_json(indent=2))
         return update
 
     def render(self) -> str:
@@ -95,4 +82,10 @@ class KnowledgeStore:
             lines.append(f"- {key}: {value}{mark}")
         lines += ["", "Marketing rules:"]
         lines += [f"- {rule}" for rule in self.rules()]
+        if self.pricing_restricted:
+            lines += [
+                "",
+                "Pricing restricted: leave prices and any mention of pricing out of all "
+                "campaign materials.",
+            ]
         return "\n".join(lines)
