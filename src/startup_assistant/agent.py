@@ -1,25 +1,90 @@
-"""Track B: the Assistant. Stub."""
+"""Track B: the Assistant — one Claude Agent SDK session with four in-process tools."""
 
+import os
 from pathlib import Path
 from typing import Literal
 
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    ResultMessage,
+    TextBlock,
+)
+
+from startup_assistant.briefs import BriefStore
 from startup_assistant.contracts import Reply
+from startup_assistant.knowledge import KnowledgeStore
+from startup_assistant.prompts import SYSTEM_PROMPT, build_turn_message
+from startup_assistant.tools import SERVER_NAME, TOOL_NAMES, TurnLog, brief_index, build_server
+
+MAX_TURNS = 8
 
 
 def auth_mode() -> Literal["api-key", "claude-session"]:
-    raise NotImplementedError
+    """The SDK uses ANTHROPIC_API_KEY when set, otherwise the local Claude Code login."""
+    return "api-key" if os.environ.get("ANTHROPIC_API_KEY") else "claude-session"
 
 
 class Assistant:
     def __init__(self, data_dir: Path, model: str | None = None):
-        self.data_dir = data_dir
-        self.model = model
+        self.data_dir = Path(data_dir)
+        self.model = model or os.environ.get("ASSISTANT_MODEL") or None
+        self.turn = TurnLog()
+        self.knowledge: KnowledgeStore | None = None
+        self.briefs: BriefStore | None = None
+        self._client: ClaudeSDKClient | None = None
+
+    def _options(self) -> ClaudeAgentOptions:
+        server = build_server(self.knowledge, self.briefs, self.turn)
+        return ClaudeAgentOptions(
+            system_prompt=SYSTEM_PROMPT,
+            mcp_servers={SERVER_NAME: server},
+            strict_mcp_config=True,  # ignore any other MCP servers configured on this machine
+            tools=[],  # no built-in Claude Code tools (Bash, Read, Write, WebSearch, ...)
+            allowed_tools=TOOL_NAMES,
+            setting_sources=[],  # don't load user/project settings or CLAUDE.md
+            permission_mode="dontAsk",  # never prompt; anything not pre-approved is denied
+            max_turns=MAX_TURNS,
+            model=self.model,
+        )
 
     async def __aenter__(self) -> "Assistant":
-        raise NotImplementedError
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.knowledge = KnowledgeStore(self.data_dir / "knowledge.json")
+        self.briefs = BriefStore(self.data_dir / "briefs.json")
+        self._client = ClaudeSDKClient(options=self._options())
+        await self._client.connect()
+        return self
 
     async def __aexit__(self, *exc) -> None:
-        raise NotImplementedError
+        if self._client is not None:
+            await self._client.disconnect()
+            self._client = None
 
     async def handle(self, text: str) -> Reply:
-        raise NotImplementedError
+        if self._client is None:
+            raise RuntimeError("Assistant is not connected; use `async with Assistant(...)`.")
+        # Reset in place: the tool handlers hold a reference to this TurnLog.
+        self.turn.user_text = text
+        self.turn.actions.clear()
+        self.turn.artifacts.clear()
+
+        await self._client.query(
+            build_turn_message(self.knowledge.render(), brief_index(self.briefs), text)
+        )
+        parts: list[str] = []
+        async for message in self._client.receive_response():
+            if isinstance(message, AssistantMessage):
+                if message.error:
+                    parts.append(f"[Model error: {message.error}]")
+                parts += [b.text for b in message.content if isinstance(b, TextBlock)]
+            elif isinstance(message, ResultMessage) and message.is_error:
+                detail = "; ".join(message.errors or []) or message.subtype
+                parts.append(f"[The request did not finish cleanly: {detail}]")
+
+        return Reply(
+            text="\n\n".join(p.strip() for p in parts if p.strip()),
+            artifacts=list(self.turn.artifacts),
+            actions=list(self.turn.actions),
+        )
