@@ -29,6 +29,9 @@ TOOL_NAMES: list[str] = [
 ]
 
 CHECK_SKIPPED_NOTE = "Note: the AI brief check could not run; saved after the code checks only."
+# After this many AI-checker rejections in one turn, the next attempt is saved with the
+# checker's points attached, so a checker that keeps (wrongly) objecting can't burn the turn.
+MAX_CHECKER_REJECTIONS = 2
 
 MAX_EMAIL_WORDS = 150
 
@@ -53,6 +56,14 @@ class TurnLog(BaseModel):
     # Copies added by get_latest_brief/get_brief. Assistant.handle clears `artifacts` in place
     # each turn but not this list, so tools prune it against `artifacts` (_forget_stale).
     retrieved: list[str] = []
+    # AI-checker rejections of save_brief in this turn. Assistant.handle starts a turn by
+    # assigning `user_text` (it doesn't call a reset method), so that assignment zeroes it.
+    checker_rejections: int = 0
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        super().__setattr__(name, value)
+        if name == "user_text":
+            super().__setattr__("checker_rejections", 0)
 
 
 def word_count(text: str) -> int:
@@ -389,8 +400,12 @@ def make_tools(
             ]
             return _text("Brief NOT saved. Fix and retry:\n- " + "\n- ".join(problems), True)
 
-        campaign = display_name(requested_campaign(args) or DEFAULT_CAMPAIGN)
         revises = args.get("revises")
+        named = requested_campaign(args)
+        if named is None and revises is not None:
+            campaign = read_campaign(args)  # a revision without a campaign: the current one
+        else:
+            campaign = display_name(named or DEFAULT_CAMPAIGN)
         errors = validate_brief(draft, knowledge.pricing_restricted)
         if revises is not None and briefs.get(revises, campaign) is None:
             elsewhere = [f'"{c}"' for c in briefs.campaigns() if briefs.get(revises, c)]
@@ -414,14 +429,21 @@ def make_tools(
                 )
             except Exception:  # the contract says it never raises; fail open like None if it does
                 problems = None
-            if problems:
+            if problems and turn.checker_rejections < MAX_CHECKER_REJECTIONS:
+                turn.checker_rejections += 1
                 return _text(
                     "Brief check found problems:\n- "
                     + "\n- ".join(problems)
                     + "\n\nBrief NOT saved. Fix these problems and call save_brief again.",
                     True,
                 )
-            if problems is None:
+            if problems:
+                points = "; ".join(p.rstrip(".") for p in problems)
+                check_note = (
+                    f"\n\nThe AI brief check still reported: {points}. Saved after "
+                    f"{MAX_CHECKER_REJECTIONS} rejected attempts; review these points."
+                )
+            elif problems is None:
                 check_note = f"\n\n{CHECK_SKIPPED_NOTE}"
 
         markdown = render_brief_markdown(draft)
