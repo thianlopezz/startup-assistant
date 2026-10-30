@@ -19,6 +19,10 @@ from startup_assistant.agent import Assistant, auth_mode
 from startup_assistant.contracts import Reply
 
 EXIT_WORDS = {"exit", "quit"}
+NOT_LOGGED_IN = """\
+Not logged in to Claude. Do one of these, then run the assistant again:
+  - set an API key:        export ANTHROPIC_API_KEY=sk-ant-...
+  - or, with Claude Code:  claude auth login"""
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -127,10 +131,14 @@ async def _repl(
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     console = Console()
+    auth = auth_mode()
+    if auth == "not-logged-in":
+        console.print(NOT_LOGGED_IN, markup=False, highlight=False)
+        return 1
     if args.reset:
         reset_data(args.data_dir)
     console.print(Panel(
-        f"HarborDesk assistant\nData dir: {args.data_dir}\nAuth: {auth_mode()}\n"
+        f"HarborDesk assistant\nData dir: {args.data_dir}\nAuth: {auth}\n"
         "Type 'exit' or 'quit' (or Ctrl-D) to leave.",
         expand=False,
     ))

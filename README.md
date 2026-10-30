@@ -4,6 +4,25 @@ A command-line assistant for the founder of HarborDesk. Across separate requests
 questions from company knowledge, creates and revises marketing campaign briefs, absorbs new
 company information, and retrieves saved work, deciding for itself which of those a request needs.
 
+## Quick start
+
+Needs Python 3.11+ (macOS, Linux or WSL). The first run creates `.venv` and installs everything (about 10 seconds).
+
+```bash
+./run.sh test        # offline unit tests, no login needed
+./run.sh demo        # the six required interactions with canned replies + checks, no login needed
+./run.sh             # chat with the assistant (uses the real model)
+```
+
+To use the real model, either be logged in to Claude Code on this machine, or run `export ANTHROPIC_API_KEY=sk-ant-...` first.
+Claude Code doesn't have to be installed, because the SDK ships its own copy. If neither login nor key is found, the assistant says so at startup and exits.
+
+More:
+
+- `./run.sh --reset` starts from fresh company data. Without it, data in `data/` survives restarts.
+- `./run.sh demo-live` runs the six interactions against the real model and checks the result. It writes to a temp dir, never over `examples/`, and takes a few minutes.
+- `examples/transcript.md` shows the messages the demo sends, if you want to type them yourself.
+
 ## Recording
 
 - Recording: TODO (link). The 3-hour cutoff is marked at TODO (timestamp) in the video.
@@ -24,16 +43,18 @@ TODO. If nothing was done after the cutoff, say so.
 
 ## What was built, setup and run
 
-Requirements: Python 3.11+ (built and tested on 3.14).
+Requirements: Python 3.11+ (built and tested on 3.14). `./run.sh` (see Quick start) does the setup below
+for you. To do it by hand:
 
 ```bash
-python3.14 -m venv .venv
+python3 -m venv .venv               # python3 must be 3.11+; on macOS the system one is 3.9
 .venv/bin/pip install -e '.[dev]'
 ```
 
-Authentication goes through the Claude Agent SDK. By default it uses your local Claude Code login
-(run `claude` once and log in). If `ANTHROPIC_API_KEY` is set, that key is used instead. The code path
-is the same either way, and the CLI prints which one is active at startup. No credentials are stored
+Authentication goes through the Claude Agent SDK, which includes its own Claude Code CLI. By default it uses your local Claude Code login
+(`claude auth login`). If `ANTHROPIC_API_KEY` is set, that key is used instead. The code path
+is the same either way. At startup the CLI asks the SDK's CLI (`claude auth status`) which one is
+available, prints it, and exits with instructions if there is neither. No credentials are stored
 in the repo.
 
 Run the assistant:
@@ -45,7 +66,7 @@ Run the assistant:
 
 - `--data-dir` (default `data`): where company knowledge and briefs are stored (JSON files).
 - `--reset`: delete the data dir first; it is re-seeded from the HarborDesk company data.
-- `--model`: model to use (default: SDK default).
+- `--model`: model to use (default: `ASSISTANT_MODEL` env var, else the SDK default).
 - Type `exit` or `quit` (or Ctrl-D) to leave. Data survives restarts.
 - Pasting multi-line text (for example the founder update) sends it as one message: the prompt uses `prompt_toolkit` with bracketed paste, so only your own Enter submits. When input is piped, each line is a separate message.
 
@@ -61,7 +82,7 @@ Run the scripted demo (the six required interactions, with a real process restar
 .venv/bin/python scripts/demo.py --fake --check   # canned replies, no model needed
 ```
 
-With no `--data-dir`/`--transcript` it regenerates `examples/demo-data` and `examples/transcript.md` in place (that is how the committed examples were made).
+Careful: a model-backed run with no `--data-dir`/`--transcript` overwrites `examples/demo-data` and `examples/transcript.md` in place (that is how the committed examples were made). `./run.sh demo-live` always writes to a temp dir. `--fake` runs write to the git-ignored `examples/fake-data` and `examples/fake-transcript.md`.
 
 Options: `--data-dir` (default `examples/demo-data`), `--transcript` (default `examples/transcript.md`), `--phase 1|2|all` (default `all`: reset, run
 turns 1-5 in this process, then turn 6 in a new subprocess), `--check`, `--fake`, `--model`.
@@ -117,7 +138,7 @@ Environment variables (all optional):
 
 ## What was verified and what happened
 
-- **Unit tests:** `pytest -q` → 167 passed, 4 skipped (the live tests). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error) and the CLI (footer, error handling).
+- **Unit tests:** `pytest -q` → 175 passed, 4 skipped (the live tests). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error), the CLI (footer, error handling) and the startup login check.
 - **Live tests:** `RUN_LIVE=1 pytest -m live` → 4 passed. Answering a question uses no tool and changes nothing. The AI checker returns no problems for a clean brief, and flags a made-up customer statistic and an indirect "commercial terms are left out" pricing hint.
 - **Live demo:** `scripts/demo.py --check`.
   - The first run gave 4/5. The "retrieval printed the stored brief verbatim" check failed. The brief *was* verbatim, but the printed block starts with a version header line and the check demanded exact equality. I fixed the check to find the stored text inside the printed block, and the final run passed 5/5. Footers per turn: none / v1 saved / knowledge v1 / none / v2 saved (revises v1) / none.
@@ -157,6 +178,8 @@ Environment variables (all optional):
     - A checker that keeps disagreeing could loop for minutes; it's now capped at 2 rejections per turn.
   - Smaller fixes: the checker's model stream is closed on timeout; a revision without a campaign name stays in the current campaign; diffs show in a "Changes" panel.
   - Re-ran after the fixes: 167 unit tests, 4 live tests, live demo 6/6.
+
+- **Reviewer setup:** a fresh copy was set up from scratch with `./run.sh`. Then `test`, `demo` and a live question all worked. With no login and no key, startup stops with the instructions instead of the SDK's "Not logged in · Please run /login".
 
 ## Unfinished and next steps
 

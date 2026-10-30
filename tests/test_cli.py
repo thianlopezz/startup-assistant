@@ -103,6 +103,22 @@ def test_repl_continues_after_error_and_exits(monkeypatch, tmp_path, capsys):
     assert "claude-session" in out
 
 
+def test_not_logged_in_exits_with_hint_before_touching_data(monkeypatch, tmp_path, capsys):
+    def no_assistant(*a, **k):
+        raise AssertionError("must not start the assistant")
+
+    d = tmp_path / "d"
+    d.mkdir()
+    (d / "knowledge.json").write_text("{}")
+    monkeypatch.setattr(cli, "Assistant", no_assistant)
+    monkeypatch.setattr(cli, "auth_mode", lambda: "not-logged-in")
+    assert cli.main(["--data-dir", str(d), "--reset"]) == 1
+    out = capsys.readouterr().out
+    assert "ANTHROPIC_API_KEY" in out
+    assert "claude auth login" in out
+    assert (d / "knowledge.json").exists()  # --reset not applied
+
+
 def test_repl_exits_on_eof(monkeypatch, tmp_path):
     def raise_eof(*a, **k):
         raise EOFError
