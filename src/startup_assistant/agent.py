@@ -9,6 +9,10 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    HookContext,
+    HookInput,
+    HookJSONOutput,
+    HookMatcher,
     ResultMessage,
     TextBlock,
 )
@@ -51,7 +55,16 @@ class Assistant:
             permission_mode="dontAsk",  # never prompt; anything not pre-approved is denied
             max_turns=MAX_TURNS,
             model=self.model,
+            hooks={"PreCompact": [HookMatcher(hooks=[self._on_pre_compact])]},
         )
+
+    async def _on_pre_compact(
+        self, input: HookInput, tool_use_id: str | None, context: HookContext
+    ) -> HookJSONOutput:
+        """Compaction may summarise away the full knowledge block we sent earlier, so the next
+        turn must resend it rather than say "Unchanged since vN"."""
+        self._sent_knowledge_version = None
+        return {}
 
     def _make_client(self) -> ClaudeSDKClient:
         """Seam for tests: they return a fake client here."""
@@ -99,10 +112,11 @@ class Assistant:
         knowledge_text = None if version == self._sent_knowledge_version else self.knowledge.render()
         parts: list[str] = []
         try:
+            # Set before query(): a PreCompact hook may reset it while the turn runs.
+            self._sent_knowledge_version = version
             await self._client.query(
                 build_turn_message(knowledge_text, brief_index(self.briefs), text, version)
             )
-            self._sent_knowledge_version = version
             async for message in self._client.receive_response():
                 if isinstance(message, AssistantMessage):
                     if message.error:

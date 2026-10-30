@@ -174,6 +174,81 @@ def test_repl_real_sigint_cancels_each_turn(monkeypatch, tmp_path, capsys):
     assert "echo hi" in out
 
 
+class _DoubleSigintAssistant(_FakeAssistant):
+    """Ctrl-C during a slow reply, then Ctrl-C again while the turn is being cleaned up
+    (like Assistant._abort_turn: interrupt + drain, which swallows any error)."""
+
+    def __init__(self, data_dir, model=None):
+        super().__init__(data_dir, model)
+        self.cleanup_finished = False
+        self.cancelling_next_turn = None
+
+    async def handle(self, text):
+        if text == "slow":
+            threading.Timer(0.05, os.kill, (os.getpid(), signal.SIGINT)).start()
+            try:
+                await asyncio.sleep(5)
+            except BaseException:
+                threading.Timer(0.05, os.kill, (os.getpid(), signal.SIGINT)).start()
+                try:
+                    await asyncio.sleep(0.3)  # draining
+                    self.cleanup_finished = True
+                except BaseException:
+                    pass
+                raise
+            return Reply(text="slow reply was not interrupted")
+        self.cancelling_next_turn = asyncio.current_task().cancelling()
+        return await super().handle(text)
+
+
+def test_repl_second_sigint_during_cleanup_is_ignored(monkeypatch, tmp_path, capsys):
+    made = []
+
+    def factory(*a, **k):
+        made.append(_DoubleSigintAssistant(*a, **k))
+        return made[-1]
+
+    inputs = iter(["slow", "hi", "quit"])
+    monkeypatch.setattr(cli, "Assistant", factory)
+    monkeypatch.setattr(cli, "auth_mode", lambda: "claude-session")
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(inputs))
+    try:
+        rc = cli.main(["--data-dir", str(tmp_path / "d")])
+    except KeyboardInterrupt:
+        pytest.fail("a Ctrl-C during a reply escaped the REPL")
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert out.count("Interrupted") == 1
+    assert "echo hi" in out
+    assert made[0].cleanup_finished, "second Ctrl-C abandoned the turn cleanup"
+    assert made[0].cancelling_next_turn == 0
+
+
+def test_repl_ctrl_c_during_render_continues(monkeypatch, tmp_path, capsys):
+    calls = []
+    real_render = cli.render_reply
+
+    def render(console, reply):
+        calls.append(reply.text)
+        if len(calls) == 1:
+            raise KeyboardInterrupt
+        real_render(console, reply)
+
+    inputs = iter(["first", "second", "quit"])
+    monkeypatch.setattr(cli, "Assistant", _FakeAssistant)
+    monkeypatch.setattr(cli, "auth_mode", lambda: "claude-session")
+    monkeypatch.setattr(cli, "render_reply", render)
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(inputs))
+    try:
+        rc = cli.main(["--data-dir", str(tmp_path / "d")])
+    except KeyboardInterrupt:
+        pytest.fail("a Ctrl-C while printing a reply escaped the REPL")
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Interrupted" in out
+    assert "echo second" in out
+
+
 class _RecordingAssistant(_FakeAssistant):
     received: list[str] = []
 

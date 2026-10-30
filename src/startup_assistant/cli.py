@@ -67,13 +67,15 @@ async def _read_message(console: Console, session: PromptSession | None) -> str:
 
 @contextlib.contextmanager
 def _ctrl_c_cancels_current_task():
-    """While a reply is in flight, every Ctrl-C cancels this task. asyncio.run's own SIGINT
-    handler only does that for the first one and raises KeyboardInterrupt out of the event loop
-    for the rest. On exit SIGINT goes back to Python's default (KeyboardInterrupt), so Ctrl-C at
-    the prompt still leaves."""
+    """While a reply is in flight, Ctrl-C cancels this task. asyncio.run's own SIGINT handler
+    only does that for the first press in a session and raises KeyboardInterrupt out of the
+    event loop for the rest. A press while a cancel is already pending is ignored, so it can't
+    abandon the turn cleanup (interrupt + drain) that the first one started. On exit SIGINT goes
+    back to Python's default (KeyboardInterrupt), so Ctrl-C at the prompt still leaves."""
     loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
     try:
-        loop.add_signal_handler(signal.SIGINT, asyncio.current_task().cancel)
+        loop.add_signal_handler(signal.SIGINT, lambda: task.cancelling() or task.cancel())
     except (NotImplementedError, RuntimeError, ValueError):  # Windows / not the main thread
         yield
         return
@@ -102,8 +104,10 @@ async def _repl(
                     reply = await assistant.handle(text)
             except asyncio.CancelledError:
                 # Ctrl-C during a reply cancelled this task (see _ctrl_c_cancels_current_task).
-                # Undo that cancel so the REPL keeps going; handle() already cleaned up the turn.
-                asyncio.current_task().uncancel()
+                # Undo it so the REPL keeps going; handle() already cleaned up the turn.
+                task = asyncio.current_task()
+                while task.cancelling():
+                    task.uncancel()
                 console.print("Interrupted", markup=False)
                 continue
             except KeyboardInterrupt:
@@ -113,7 +117,10 @@ async def _repl(
                 msg = escape(f"{type(exc).__name__}: {exc}")
                 console.print(f"[red]Error:[/] {msg}", highlight=False)
                 continue
-            render_reply(console, reply)
+            try:
+                render_reply(console, reply)
+            except KeyboardInterrupt:  # Ctrl-C while printing a long reply
+                console.print("\nInterrupted", markup=False)
 
 
 def main(argv: list[str] | None = None) -> int:
