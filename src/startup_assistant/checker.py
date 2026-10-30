@@ -11,7 +11,8 @@ def checker_enabled() -> bool:
 
 async def check_brief(
     draft: BriefDraft, knowledge_text: str, pricing_restricted: bool, model: str | None = None
-) -> list[str]:
-    """Problems found in the brief; [] means OK. Never raises: if the checker itself fails it
-    returns [] and the caller saves anyway (fail-open)."""
+) -> list[str] | None:
+    """Problems found in the brief; [] means OK; None means the check could not run (model
+    error, timeout, unparseable answer). Never raises; the caller saves on None (fail-open) and
+    says the check was skipped."""
     return []
