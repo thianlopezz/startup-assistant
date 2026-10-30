@@ -148,3 +148,27 @@ def test_knowledge_resent_after_aborted_turn(tmp_path):
     assert FULL_KNOWLEDGE in _knowledge_section(q1)
     assert UNCHANGED in _knowledge_section(q2)
     assert FULL_KNOWLEDGE in _knowledge_section(q3)
+
+
+def test_knowledge_resent_after_compaction(tmp_path):
+    client = FakeClient()
+
+    async def go():
+        async with FakeClientAssistant(tmp_path, client) as assistant:
+            await assistant.handle("turn 1")
+            await assistant.handle("turn 2")
+            [matcher] = assistant._options().hooks["PreCompact"]
+            [hook] = matcher.hooks
+            out = await hook(
+                {"hook_event_name": "PreCompact", "trigger": "auto", "custom_instructions": None,
+                 "session_id": "fake", "transcript_path": "", "cwd": str(tmp_path)},
+                None, {"signal": None},
+            )
+            assert isinstance(out, dict)
+            await assistant.handle("turn 3")
+
+    asyncio.run(go())
+    q1, q2, q3 = client.queries
+    assert FULL_KNOWLEDGE in _knowledge_section(q1)
+    assert UNCHANGED in _knowledge_section(q2)
+    assert FULL_KNOWLEDGE in _knowledge_section(q3)
