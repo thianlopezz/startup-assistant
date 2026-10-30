@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from claude_agent_sdk import SdkMcpTool, create_sdk_mcp_server, tool
+from filelock import Timeout
 from pydantic import BaseModel, ValidationError
 
 from startup_assistant import checker
@@ -28,6 +29,10 @@ TOOL_NAMES: list[str] = [
     f"mcp__{SERVER_NAME}__compare_briefs",
 ]
 
+STORE_BUSY = (
+    "The data store is busy (another assistant is saving). Nothing was saved; try again in a "
+    "moment."
+)
 CHECK_SKIPPED_NOTE = "Note: the AI brief check could not run; saved after the code checks only."
 # After this many AI-checker rejections in one turn, the next attempt is saved with the
 # checker's points attached, so a checker that keeps (wrongly) objecting can't burn the turn.
@@ -349,12 +354,15 @@ def make_tools(
         UPDATE_KNOWLEDGE_SCHEMA,
     )
     async def update_company_knowledge(args: dict[str, Any]) -> dict[str, Any]:
-        update = knowledge.apply_update(
-            source_text=turn.user_text,
-            summary=args["summary"],
-            field_changes=dict(args.get("field_changes") or {}),
-            new_rules=list(args.get("new_rules") or []),
-        )
+        try:
+            update = knowledge.apply_update(
+                source_text=turn.user_text,
+                summary=args["summary"],
+                field_changes=dict(args.get("field_changes") or {}),
+                new_rules=list(args.get("new_rules") or []),
+            )
+        except Timeout:
+            return _text(STORE_BUSY, True)
         turn.actions.append(f"Company knowledge updated → v{update.version}")
         stale = [b for b in briefs.list() if b.knowledge_version < update.version]
         if stale:
@@ -457,6 +465,8 @@ def make_tools(
             )
         except ValueError as exc:
             return _text(f"Brief NOT saved. {exc}", True)
+        except Timeout:
+            return _text(STORE_BUSY, True)
         # Copies fetched by get_latest_brief/get_brief earlier in this turn (e.g. to revise) aren't
         # what the founder asked to see once a new version exists. This also drops a v1 the
         # founder asked to see in the same turn ("show me v1 and draft a new brief"): known, kept.
