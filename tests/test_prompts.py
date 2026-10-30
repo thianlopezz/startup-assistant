@@ -27,3 +27,10 @@ def test_system_prompt_covers_anti_goals():
         "open question",
     ):
         assert phrase in p, phrase
+
+
+def test_system_prompt_get_brief_and_implicit_pricing():
+    p = SYSTEM_PROMPT.lower()
+    assert "get_brief" in p
+    assert "commercial terms" in p
+    assert "under review" in p and "leave the topic out" in p

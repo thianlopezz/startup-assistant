@@ -1,6 +1,6 @@
 """Track B: tool definitions, brief validation and rendering.
 
-The four tools the model can call. State changes are recorded in a TurnLog by this code,
+The five tools the model can call. State changes are recorded in a TurnLog by this code,
 not by the model, so the CLI's "what changed" footer can't overclaim.
 """
 
@@ -22,13 +22,23 @@ TOOL_NAMES: list[str] = [
     f"mcp__{SERVER_NAME}__save_brief",
     f"mcp__{SERVER_NAME}__get_latest_brief",
     f"mcp__{SERVER_NAME}__list_briefs",
+    f"mcp__{SERVER_NAME}__get_brief",
 ]
 
 MAX_EMAIL_WORDS = 150
 
 _PRICE_AMOUNT = re.compile(r"\$|\d+\s*(?:/|per)\s*mo", re.IGNORECASE)
 _PRICE_WORD = re.compile(r"\bpric(?:e|es|ed|ing)\b", re.IGNORECASE)
-_HALF_CLAIM = re.compile(r"\bhalf\b|\bhalv\w*|\b50\s?(?:%|percent)", re.IGNORECASE)
+_COMMERCIAL_TERMS = re.compile(r"\bcommercial\s+terms?\b", re.IGNORECASE)
+# Only claims about reduction: "cuts ... in half", "half the time", "halved", "50%".
+# Plain uses ("half-day workshop", "second half of Q1") are fine.
+_HALF_CLAIM = re.compile(
+    r"\b(?:cuts?|cutting|reduc\w+|slash\w*|sav(?:es?|ing))\b[^.!?]{0,80}?\b(?:in|by)\s+half\b"
+    r"|\bhalf\s+the\s+time\b"
+    r"|\bhalv\w*"
+    r"|\b50\s?(?:%|percent)",
+    re.IGNORECASE,
+)
 
 
 class TurnLog(BaseModel):
@@ -73,10 +83,14 @@ def validate_brief(draft: BriefDraft, pricing_restricted: bool) -> list[str]:
                 f"{label}: the 'cuts onboarding time in half' claim (or any 'half'/50% claim) "
                 "has no supporting evidence and must not be used."
             )
-        if pricing_restricted and (_PRICE_AMOUNT.search(text) or _PRICE_WORD.search(text)):
+        if pricing_restricted and (
+            _PRICE_AMOUNT.search(text)
+            or _PRICE_WORD.search(text)
+            or _COMMERCIAL_TERMS.search(text)
+        ):
             errors.append(
                 f"{label}: pricing is under review and must be left out of campaign materials "
-                "(no dollar amounts, no mention of price or pricing)."
+                "(no dollar amounts, no mention of price, pricing or commercial terms)."
             )
     return errors
 
@@ -194,6 +208,14 @@ UPDATE_KNOWLEDGE_SCHEMA: dict[str, Any] = {
     "required": ["summary", "field_changes", "new_rules"],
 }
 
+GET_BRIEF_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "version": {"type": "integer", "description": "The brief version number to fetch."}
+    },
+    "required": ["version"],
+}
+
 _EMPTY_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
 
 
@@ -207,8 +229,8 @@ def _text(text: str, is_error: bool = False) -> dict[str, Any]:
 def make_tools(
     knowledge: KnowledgeStore, briefs: BriefStore, turn: TurnLog
 ) -> dict[str, SdkMcpTool[Any]]:
-    """The four tools, keyed by short name. Handlers close over the stores and the TurnLog."""
-    # Artifacts added by get_latest_brief. Turn artifacts are reset each turn, so matching
+    """The five tools, keyed by short name. Handlers close over the stores and the TurnLog."""
+    # Artifacts added by get_latest_brief/get_brief. Turn artifacts are reset each turn, so matching
     # by value only ever removes copies fetched in the current turn.
     retrieved: list[str] = []
 
@@ -245,7 +267,7 @@ def make_tools(
         "`revises` set to the version you revised (call get_latest_brief first). The brief "
         "is rejected and nothing is saved if the email body exceeds 150 words, there are not "
         "exactly 2 channels, it makes any 'half'/50% claim, or it mentions "
-        "pricing while pricing is restricted. On rejection, fix the listed problems and "
+        "pricing or commercial terms while pricing is restricted. On rejection, fix the listed problems and "
         "call again.",
         SAVE_BRIEF_SCHEMA,
     )
@@ -281,7 +303,7 @@ def make_tools(
             knowledge_version=knowledge.version,
             request=turn.user_text,
         )
-        # Copies fetched by get_latest_brief earlier in this turn (e.g. to revise) aren't what
+        # Copies fetched by get_latest_brief/get_brief earlier in this turn (e.g. to revise) aren't what
         # the founder asked to see once a new version exists.
         turn.artifacts[:] = [a for a in turn.artifacts if a not in retrieved]
         retrieved.clear()
@@ -319,6 +341,28 @@ def make_tools(
         )
 
     @tool(
+        "get_brief",
+        "Fetch a specific saved campaign brief version exactly as stored. It is shown to the "
+        "founder verbatim. Use when the founder asks for a particular, older or previous "
+        "version (see list_briefs for version numbers).",
+        GET_BRIEF_SCHEMA,
+    )
+    async def get_brief(args: dict[str, Any]) -> dict[str, Any]:
+        version = int(args["version"])
+        record = briefs.get(version)
+        if record is None:
+            return _text(f"No brief v{version} saved.")
+        latest = briefs.latest()
+        latest_version = latest.version if latest is not None else record.version
+        artifact = render_record_header(record, latest_version) + "\n\n" + record.markdown
+        turn.artifacts.append(artifact)
+        retrieved.append(artifact)
+        return _text(
+            f"{artifact}\n\n(This stored brief is shown to the founder verbatim below your "
+            "reply; don't reprint it.)"
+        )
+
+    @tool(
         "list_briefs",
         "List every saved brief version: kind, date, title, knowledge version it was written "
         "against.",
@@ -328,7 +372,8 @@ def make_tools(
         return _text(brief_index(briefs))
 
     return {
-        t.name: t for t in (update_company_knowledge, save_brief, get_latest_brief, list_briefs)
+        t.name: t
+        for t in (update_company_knowledge, save_brief, get_latest_brief, list_briefs, get_brief)
     }
 
 

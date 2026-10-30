@@ -126,7 +126,9 @@ def test_tool_names_and_server(stores):
         "mcp__harbordesk__save_brief",
         "mcp__harbordesk__get_latest_brief",
         "mcp__harbordesk__list_briefs",
+        "mcp__harbordesk__get_brief",
     ]
+    assert len(TOOL_NAMES) == 5
     server = build_server(knowledge, briefs, TurnLog())
     assert server["type"] == "sdk" and server["name"] == "harbordesk"
 
@@ -323,4 +325,87 @@ def test_save_brief_drops_all_retrieved_artifacts(stores):
     tools = make_tools(knowledge, briefs, turn)
     run(tools["get_latest_brief"].handler({}))
     run(tools["save_brief"].handler({"draft": make_draft().model_dump()}))  # new, not a revision
+    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
+
+
+# --- phase 2 track 1 ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "HarborDesk cuts onboarding time in half.",
+        "It reduces setup effort by half.",
+        "Slashes handoff time in half.",
+        "Saves your team time in half the cases.",
+        "Onboard in half the time.",
+        "It halves onboarding time.",
+        "Time is halved.",
+        "Halving the busywork.",
+        "Cut busywork by 50%.",
+        "Save 50 percent of the effort.",
+    ],
+)
+def test_validate_rejects_reduction_claims(claim):
+    errors = validate_brief(make_draft(main_message=claim), pricing_restricted=False)
+    assert any("half" in e.lower() for e in errors), claim
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Join a half-day kickoff workshop.",
+        "Book a half hour with us.",
+        "In the second half of Q1 we start.",
+        "I write on behalf of the team.",
+    ],
+)
+def test_validate_allows_innocent_half(text):
+    assert validate_brief(make_draft(email_body=text), pricing_restricted=False) == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Commercial terms are left out.", "We will share Commercial Term details later."],
+)
+def test_validate_commercial_terms_when_restricted(text):
+    errors = validate_brief(make_draft(assumptions=[text]), pricing_restricted=True)
+    assert any(e.startswith("assumptions[1]:") and "pricing" in e for e in errors)
+    assert validate_brief(make_draft(assumptions=[text]), pricing_restricted=False) == []
+
+
+def test_get_brief_superseded_version(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "V1 MARKDOWN", "created", None, 0, "r")
+    briefs.save(make_draft(), "V2 MARKDOWN", "revised", 1, 0, "r")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    result = run(tools["get_brief"].handler({"version": 1}))
+    assert not result.get("is_error")
+    assert turn.actions == []
+    assert len(turn.artifacts) == 1
+    assert "superseded by v2" in turn.artifacts[0]
+    assert turn.artifacts[0].endswith("V1 MARKDOWN")
+    assert turn.artifacts[0] == (
+        render_record_header(briefs.get(1), 2) + "\n\n" + briefs.get(1).markdown
+    )
+
+
+def test_get_brief_missing_version(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "md", "created", None, 0, "r")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    result = run(tools["get_brief"].handler({"version": 5}))
+    assert "No brief v5 saved." in result["content"][0]["text"]
+    assert turn.artifacts == [] and turn.actions == []
+
+
+def test_get_brief_copy_dropped_when_new_version_saved(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "md", "created", None, 0, "r")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    run(tools["get_brief"].handler({"version": 1}))
+    run(tools["save_brief"].handler({"draft": make_draft().model_dump(), "revises": 1}))
     assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")
