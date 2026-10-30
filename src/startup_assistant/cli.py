@@ -39,7 +39,8 @@ def render_reply(console: Console, reply: Reply) -> None:
     console.rule("[bold green]Assistant[/]", align="left", style="green")
     console.print(Markdown(reply.text))
     for artifact in reply.artifacts:
-        console.print(Panel(Markdown(artifact), title="Brief", title_align="left", border_style="green"))
+        title = "Changes" if artifact.startswith('Changes in "') else "Brief"
+        console.print(Panel(Markdown(artifact), title=title, title_align="left", border_style="green"))
     if reply.actions:
         footer = f"[Changed: {'; '.join(reply.actions)}]"
     else:

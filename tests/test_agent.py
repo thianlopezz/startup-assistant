@@ -260,7 +260,7 @@ def test_restricted_clean_reply_no_followup(tmp_path):
     assert reply.text == CLEAN_REPLY
 
 
-def test_followup_keeps_original_actions(tmp_path):
+def test_followup_actions_are_added_to_reply(tmp_path):
     client = FakeClient()
     client.scripts = [[_text(PRICE_REPLY), _result()], [_text(CLEAN_REPLY), _result()]]
 
@@ -271,10 +271,15 @@ def test_followup_keeps_original_actions(tmp_path):
 
             async def query(prompt):
                 await orig_query(prompt)
-                # a tool sneaking in during the follow-up must not leak into the reply
-                assistant.turn.actions.append("first" if len(client.queries) == 1 else "sneaky")
+                # the rewrite calls a tool anyway: its action must show up after the original's
+                assistant.turn.actions.append("first" if len(client.queries) == 1 else "rewrite")
+                if len(client.queries) == 2:
+                    assistant.turn.actions.append("first")  # no duplicates
+                    assistant.turn.artifacts.append("# Brief from rewrite")
 
             client.query = query
             return await assistant.handle("What does it cost?")
 
-    assert asyncio.run(go()).actions == ["first"]
+    reply = asyncio.run(go())
+    assert reply.actions == ["first", "rewrite"]
+    assert reply.artifacts == ["# Brief from rewrite"]
