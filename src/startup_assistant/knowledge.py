@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from startup_assistant.contracts import KnowledgeUpdate
 from startup_assistant.seed import SEED_MARKETING_NOTES, SEED_PROFILE
-from startup_assistant.storage import atomic_write_text
+from startup_assistant.storage import atomic_write_text, locked
 
 
 _PRICE_RULE = re.compile(r"\bpric(?:e|es|ing)\b", re.IGNORECASE)
@@ -57,17 +57,18 @@ class KnowledgeStore:
     def apply_update(
         self, source_text: str, summary: str, field_changes: dict[str, str], new_rules: list[str]
     ) -> KnowledgeUpdate:
-        data = self._load()
-        update = KnowledgeUpdate(
-            version=len(data.updates) + 1,
-            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
-            source_text=source_text,
-            summary=summary,
-            field_changes=dict(field_changes),
-            new_rules=list(new_rules),
-        )
-        data.updates.append(update)
-        atomic_write_text(self.path, data.model_dump_json(indent=2))
+        with locked(self.path):
+            data = self._load()
+            update = KnowledgeUpdate(
+                version=len(data.updates) + 1,
+                created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+                source_text=source_text,
+                summary=summary,
+                field_changes=dict(field_changes),
+                new_rules=list(new_rules),
+            )
+            data.updates.append(update)
+            atomic_write_text(self.path, data.model_dump_json(indent=2))
         return update
 
     def render(self) -> str:

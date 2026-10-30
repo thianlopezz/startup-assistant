@@ -70,3 +70,27 @@ def test_render_has_pricing_line_when_restricted_by_rule(tmp_path):
     store = KnowledgeStore(tmp_path / "knowledge.json")
     store.apply_update("t", "s", {}, ["Do not mention pricing."])
     assert PRICING_LINE in store.render()
+
+
+def _update_worker(path, barrier, tag):
+    barrier.wait()
+    store = KnowledgeStore(path)
+    for i in range(5):
+        store.apply_update(f"{tag}-{i}", "s", {}, [f"rule {tag}-{i}"])
+
+
+def test_concurrent_updates_get_unique_sequential_versions(tmp_path):
+    import multiprocessing
+
+    ctx = multiprocessing.get_context("spawn")
+    path = tmp_path / "knowledge.json"
+    barrier = ctx.Barrier(4)
+    procs = [ctx.Process(target=_update_worker, args=(path, barrier, f"p{n}")) for n in range(4)]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(timeout=60)
+        assert p.exitcode == 0
+    updates = KnowledgeStore(path).updates()
+    assert [u.version for u in updates] == list(range(1, 21))
+    assert len({u.source_text for u in updates}) == 20

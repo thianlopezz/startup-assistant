@@ -112,3 +112,27 @@ def test_blank_campaign_means_default(tmp_path):
     assert store.save(make_draft(), "# a", "created", None, 0, "r", campaign="  ").campaign == (
         DEFAULT_CAMPAIGN
     )
+
+
+def _save_worker(path, barrier, tag):
+    barrier.wait()
+    store = BriefStore(path)
+    for i in range(5):
+        store.save(make_draft(), f"# {tag}-{i}", "created", None, 0, f"{tag}-{i}")
+
+
+def test_concurrent_saves_get_unique_sequential_versions(tmp_path):
+    import multiprocessing
+
+    ctx = multiprocessing.get_context("spawn")
+    path = tmp_path / "briefs.json"
+    barrier = ctx.Barrier(4)
+    procs = [ctx.Process(target=_save_worker, args=(path, barrier, f"p{n}")) for n in range(4)]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(timeout=60)
+        assert p.exitcode == 0
+    records = BriefStore(path).list(DEFAULT_CAMPAIGN)
+    assert [r.version for r in records] == list(range(1, 21))
+    assert len({r.request for r in records}) == 20
