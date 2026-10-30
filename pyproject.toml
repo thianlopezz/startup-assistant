@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2",
     "rich>=13",
     "prompt_toolkit>=3",
+    "filelock>=3",
 ]
 
 [project.optional-dependencies]
