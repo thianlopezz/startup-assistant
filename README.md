@@ -30,7 +30,7 @@ More:
 
 ## 3-hour commit
 
-- Preserved commit at the 3-hour cutoff: TODO (link)
+- Preserved commit at the 3-hour cutoff: [`b88619f`](https://github.com/thianlopezz/startup-assistant/commit/b88619f) (`docs: README unit test count`). Later commits only fill in this README section.
 
 ## Elapsed working time
 
