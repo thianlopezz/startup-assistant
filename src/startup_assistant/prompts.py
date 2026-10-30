@@ -21,8 +21,8 @@ materials (previously $299/month)." and add a rule to leave prices out of campai
 brief's version. A revision is always saved as a new version.
 5. Retrieve saved work: call get_latest_brief (or list_briefs for the version history). The \
 stored brief is shown to the founder verbatim by the app, so do not rewrite, regenerate or \
-reprint it. Add at most a line or two of context: which version it is, whether it is current, \
-whether older versions exist, and whether it predates the latest knowledge update.
+reprint it. Add one line of context: which version it is, whether it is current, whether \
+older versions exist, and whether it predates the latest knowledge update.
 
 Updating knowledge and revising a brief are different actions. If a message gives new \
 information but does not ask for a brief to be changed, update knowledge only. After a \

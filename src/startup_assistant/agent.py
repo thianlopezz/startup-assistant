@@ -1,5 +1,6 @@
 """Track B: the Assistant — one Claude Agent SDK session with four in-process tools."""
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Literal
@@ -19,6 +20,7 @@ from startup_assistant.prompts import SYSTEM_PROMPT, build_turn_message
 from startup_assistant.tools import SERVER_NAME, TOOL_NAMES, TurnLog, brief_index, build_server
 
 MAX_TURNS = 8
+DRAIN_TIMEOUT_S = 10
 
 
 def auth_mode() -> Literal["api-key", "claude-session"]:
@@ -62,6 +64,20 @@ class Assistant:
             await self._client.disconnect()
             self._client = None
 
+    async def _abort_turn(self) -> None:
+        """Best effort: stop the in-flight turn and drain its messages up to the ResultMessage,
+        so they don't leak into the next turn. Never raises."""
+        client = self._client
+        if client is None:
+            return
+        try:
+            async with asyncio.timeout(DRAIN_TIMEOUT_S):
+                await client.interrupt()
+                async for _ in client.receive_response():
+                    pass
+        except BaseException:
+            pass
+
     async def handle(self, text: str) -> Reply:
         if self._client is None:
             raise RuntimeError("Assistant is not connected; use `async with Assistant(...)`.")
@@ -70,18 +86,22 @@ class Assistant:
         self.turn.actions.clear()
         self.turn.artifacts.clear()
 
-        await self._client.query(
-            build_turn_message(self.knowledge.render(), brief_index(self.briefs), text)
-        )
         parts: list[str] = []
-        async for message in self._client.receive_response():
-            if isinstance(message, AssistantMessage):
-                if message.error:
-                    parts.append(f"[Model error: {message.error}]")
-                parts += [b.text for b in message.content if isinstance(b, TextBlock)]
-            elif isinstance(message, ResultMessage) and message.is_error:
-                detail = "; ".join(message.errors or []) or message.subtype
-                parts.append(f"[The request did not finish cleanly: {detail}]")
+        try:
+            await self._client.query(
+                build_turn_message(self.knowledge.render(), brief_index(self.briefs), text)
+            )
+            async for message in self._client.receive_response():
+                if isinstance(message, AssistantMessage):
+                    if message.error:
+                        parts.append(f"[Model error: {message.error}]")
+                    parts += [b.text for b in message.content if isinstance(b, TextBlock)]
+                elif isinstance(message, ResultMessage) and message.is_error:
+                    detail = "; ".join(message.errors or []) or message.subtype
+                    parts.append(f"[The request did not finish cleanly: {detail}]")
+        except BaseException:  # includes CancelledError / KeyboardInterrupt
+            await self._abort_turn()
+            raise
 
         return Reply(
             text="\n\n".join(p.strip() for p in parts if p.strip()),

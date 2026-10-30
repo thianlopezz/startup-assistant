@@ -278,3 +278,49 @@ def test_list_briefs(stores):
     text = run(tools["list_briefs"].handler({}))["content"][0]["text"]
     assert "v1" in text and make_draft().title in text
     assert turn.actions == [] and turn.artifacts == []
+
+
+# --- fix round 1 ----------------------------------------------------------------------
+
+
+def test_pricing_restricted_by_rule_only(tmp_path):
+    from startup_assistant.knowledge import KnowledgeStore
+
+    knowledge, briefs = KnowledgeStore(tmp_path / "k.json"), FakeBriefStore()
+    assert knowledge.pricing_restricted is False
+    knowledge.apply_update("x", "no prices", {}, ["Leave Prices out of campaign materials."])
+    assert knowledge.pricing_restricted is True
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    draft = make_draft(email_body="Plans start at $299/month.").model_dump()
+    result = run(tools["save_brief"].handler({"draft": draft}))
+    assert result["is_error"] is True
+    assert briefs.list() == [] and turn.actions == []
+
+
+@pytest.mark.parametrize(
+    "claim",
+    ["It cuts onboarding time by half.", "Onboard in half the time.", "Saves 50 percent of effort."],
+)
+def test_validate_half_claim_rewordings(claim):
+    errors = validate_brief(make_draft(main_message=claim), pricing_restricted=False)
+    assert any("half" in e.lower() for e in errors)
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["Only $ a little each month.", "Just 299 per month.", "From 299/mo for teams."],
+)
+def test_validate_pricing_any_dollar_and_per_month(body):
+    assert validate_brief(make_draft(email_body=body), pricing_restricted=True)
+    assert validate_brief(make_draft(email_body=body), pricing_restricted=False) == []
+
+
+def test_save_brief_drops_all_retrieved_artifacts(stores):
+    knowledge, briefs = stores
+    briefs.save(make_draft(), "md", "created", None, 0, "r")
+    turn = TurnLog()
+    tools = make_tools(knowledge, briefs, turn)
+    run(tools["get_latest_brief"].handler({}))
+    run(tools["save_brief"].handler({"draft": make_draft().model_dump()}))  # new, not a revision
+    assert len(turn.artifacts) == 1 and turn.artifacts[0].startswith("Brief v2 — CURRENT")

@@ -26,9 +26,9 @@ TOOL_NAMES: list[str] = [
 
 MAX_EMAIL_WORDS = 150
 
-_PRICE_AMOUNT = re.compile(r"\$\s?\d")
+_PRICE_AMOUNT = re.compile(r"\$|\d+\s*(?:/|per)\s*mo", re.IGNORECASE)
 _PRICE_WORD = re.compile(r"\bpric(?:e|es|ed|ing)\b", re.IGNORECASE)
-_HALF_CLAIM = re.compile(r"\bin half\b|\bhalv(?:e|es|ed|ing)\b|\b50\s?%", re.IGNORECASE)
+_HALF_CLAIM = re.compile(r"\bhalf\b|\bhalv\w*|\b50\s?(?:%|percent)", re.IGNORECASE)
 
 
 class TurnLog(BaseModel):
@@ -208,6 +208,9 @@ def make_tools(
     knowledge: KnowledgeStore, briefs: BriefStore, turn: TurnLog
 ) -> dict[str, SdkMcpTool[Any]]:
     """The four tools, keyed by short name. Handlers close over the stores and the TurnLog."""
+    # Artifacts added by get_latest_brief. Turn artifacts are reset each turn, so matching
+    # by value only ever removes copies fetched in the current turn.
+    retrieved: list[str] = []
 
     @tool(
         "update_company_knowledge",
@@ -241,7 +244,7 @@ def make_tools(
         "Validate and save a campaign brief as a new version. Use for a new brief, or with "
         "`revises` set to the version you revised (call get_latest_brief first). The brief "
         "is rejected and nothing is saved if the email body exceeds 150 words, there are not "
-        "exactly 2 channels, it repeats the unsupported 'in half' claim, or it mentions "
+        "exactly 2 channels, it makes any 'half'/50% claim, or it mentions "
         "pricing while pricing is restricted. On rejection, fix the listed problems and "
         "call again.",
         SAVE_BRIEF_SCHEMA,
@@ -278,10 +281,11 @@ def make_tools(
             knowledge_version=knowledge.version,
             request=turn.user_text,
         )
+        # Copies fetched by get_latest_brief earlier in this turn (e.g. to revise) aren't what
+        # the founder asked to see once a new version exists.
+        turn.artifacts[:] = [a for a in turn.artifacts if a not in retrieved]
+        retrieved.clear()
         if revises is not None:
-            # The copy of the old version fetched for revising isn't what the founder asked to see.
-            prefix = f"Brief v{revises} — "
-            turn.artifacts[:] = [a for a in turn.artifacts if not a.startswith(prefix)]
             turn.actions.append(f"Brief v{record.version} saved (revises v{revises})")
         else:
             turn.actions.append(f"Brief v{record.version} saved (new)")
@@ -306,6 +310,7 @@ def make_tools(
         header = render_record_header(record, record.version)
         artifact = header + "\n\n" + record.markdown
         turn.artifacts.append(artifact)
+        retrieved.append(artifact)
         older = record.version - 1
         note = f" {older} older version(s) exist." if older > 0 else ""
         return _text(
