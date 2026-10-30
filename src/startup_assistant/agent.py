@@ -1,10 +1,15 @@
 """Track B: the Assistant — one Claude Agent SDK session with four in-process tools."""
 
 import asyncio
+import json
 import os
+import platform
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Literal
 
+import claude_agent_sdk
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -26,6 +31,7 @@ from startup_assistant.tools import SERVER_NAME, TOOL_NAMES, TurnLog, brief_inde
 
 MAX_TURNS = 8
 DRAIN_TIMEOUT_S = 10
+AUTH_CHECK_TIMEOUT_S = 15
 
 PRICING_NOTE = "_Note: pricing is under review; any figure above is not a current price._"
 PRICING_FOLLOWUP = (
@@ -36,9 +42,39 @@ PRICING_FOLLOWUP = (
 )
 
 
-def auth_mode() -> Literal["api-key", "claude-session"]:
-    """The SDK uses ANTHROPIC_API_KEY when set, otherwise the local Claude Code login."""
-    return "api-key" if os.environ.get("ANTHROPIC_API_KEY") else "claude-session"
+def _find_cli() -> str | None:
+    """The Claude Code CLI the SDK will run: its bundled copy, else one on PATH."""
+    name = "claude.exe" if platform.system() == "Windows" else "claude"
+    bundled = Path(claude_agent_sdk.__file__).parent / "_bundled" / name
+    return str(bundled) if bundled.is_file() else shutil.which("claude")
+
+
+def _cli_auth_status() -> dict | None:
+    """`claude auth status` as JSON, or None if it can't be run or read."""
+    cli = _find_cli()
+    if cli is None:
+        return None
+    try:
+        # Exits 1 when logged out, but still prints the JSON.
+        proc = subprocess.run(
+            [cli, "auth", "status"], capture_output=True, text=True, timeout=AUTH_CHECK_TIMEOUT_S
+        )
+        status = json.loads(proc.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+    return status if isinstance(status, dict) else None
+
+
+def auth_mode() -> Literal["api-key", "claude-session", "not-logged-in"]:
+    """The SDK uses ANTHROPIC_API_KEY when set, otherwise the local Claude Code login. Asks the
+    SDK's CLI which one is available; if it can't be asked, assumes the env var / login and
+    leaves any problem to the first request."""
+    status = _cli_auth_status()
+    if status is None:
+        return "api-key" if os.environ.get("ANTHROPIC_API_KEY") else "claude-session"
+    if not status.get("loggedIn"):
+        return "not-logged-in"
+    return "api-key" if status.get("authMethod") == "api_key" else "claude-session"
 
 
 class Assistant:
