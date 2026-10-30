@@ -109,7 +109,7 @@ Example outputs (all from live-model runs):
 
 ## What was verified and what happened
 
-- **Unit tests:** `pytest -q` → 85 passed, 1 skipped (the live test). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error) and the CLI (footer, error handling).
+- **Unit tests:** `pytest -q` → 89 passed, 1 skipped (the live test). They cover the stores (persistence across instances, versioning, byte-identical markdown), brief validation (word limit, channels, pricing by field or by rule, rewordings of the "half" claim), the tool handlers (actions and artifacts, nothing saved on error) and the CLI (footer, error handling).
 - **Live test:** `RUN_LIVE=1 pytest -m live` → 1 passed. Answering a question uses no tool and changes nothing.
 - **Live demo:** `scripts/demo.py --check`.
   - The first run gave 4/5. The "retrieval printed the stored brief verbatim" check failed. The brief *was* verbatim, but the printed block starts with a version header line and the check demanded exact equality. I fixed the check to find the stored text inside the printed block, and the final run passed 5/5. Footers per turn: none / v1 saved / knowledge v1 / none / v2 saved (revises v1) / none.
@@ -135,6 +135,7 @@ Example outputs (all from live-model runs):
   - Company knowledge is sent in full only on the first turn, when it changed, after an aborted turn, or after the SDK compacts the conversation. Other turns say "Unchanged since vN".
   - A shared atomic-write helper.
   - Re-ran the live demo: 5/5. The extended wording run included a revision and "show me version 1".
+  - A review of this round found two more problems, both now fixed with tests. A second Ctrl-C during cleanup could leak a cancelled turn into the next one; repeat presses are now ignored until cleanup finishes. After the SDK compacts a long conversation, the "Unchanged since vN" line could point at text the model no longer has; a `PreCompact` hook now forces a full resend. Live demo re-run after the fixes: 5/5.
 
 ## Unfinished and next steps
 
