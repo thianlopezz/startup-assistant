@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "startup-assistant"
+version = "0.1.0"
+description = "HarborDesk founder assistant: company knowledge + versioned campaign briefs"
+requires-python = ">=3.10"
+dependencies = [
+    "claude-agent-sdk>=0.2.175",
+    "pydantic>=2",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+startup-assistant = "startup_assistant.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: calls the real model (set RUN_LIVE=1)"]
