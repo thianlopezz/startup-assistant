@@ -4,6 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+# Campaign briefs are filed under named campaigns; records saved before campaigns existed
+# (no `campaign` key in briefs.json) load into this one.
+DEFAULT_CAMPAIGN = "Customer acquisition"
+
 
 class Channel(BaseModel):
     name: str
@@ -25,7 +29,10 @@ class BriefDraft(BaseModel):
 
 
 class BriefRecord(BaseModel):
-    """What BriefStore persists. `markdown` is rendered once at save time."""
+    """What BriefStore persists. `markdown` is rendered once at save time.
+
+    `version` and `revises` are numbered within `campaign` (each campaign has its own v1, v2...).
+    """
 
     version: int
     created_at: str
@@ -35,6 +42,7 @@ class BriefRecord(BaseModel):
     request: str
     draft: BriefDraft
     markdown: str
+    campaign: str = DEFAULT_CAMPAIGN
 
 
 class KnowledgeUpdate(BaseModel):

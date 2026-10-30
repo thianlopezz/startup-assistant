@@ -20,7 +20,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from startup_assistant.agent import Assistant, auth_mode
-from startup_assistant.briefs import BriefStore
+from startup_assistant.briefs import DEFAULT_CAMPAIGN, BriefStore
 from startup_assistant.cli import render_reply, reset_data
 from startup_assistant.contracts import BriefDraft, Channel, Reply
 from startup_assistant.knowledge import KnowledgeStore
@@ -151,10 +151,12 @@ class FakeAssistant:
         if text == PHASE1[1]:
             draft = _canned_draft(1)
             md = _brief_markdown(draft, 1)
-            rec = self.briefs.save(draft, md, "created", None, self.knowledge.version, text)
+            rec = self.briefs.save(
+                draft, md, "created", None, self.knowledge.version, text, campaign=DEFAULT_CAMPAIGN
+            )
             return Reply(
                 text="Saved the brief.", artifacts=[rec.markdown],
-                actions=[f"Saved brief v{rec.version}"],
+                actions=[f'Brief "{rec.campaign}" v{rec.version} saved (new)'],
             )
         if text == FOUNDER_UPDATE:
             upd = self.knowledge.apply_update(
@@ -180,10 +182,12 @@ class FakeAssistant:
         if text == PHASE1[4]:
             draft = _canned_draft(2)
             md = _brief_markdown(draft, 2)
-            rec = self.briefs.save(draft, md, "revised", 1, self.knowledge.version, text)
+            rec = self.briefs.save(
+                draft, md, "revised", 1, self.knowledge.version, text, campaign=DEFAULT_CAMPAIGN
+            )
             return Reply(
                 text="Saved a revised brief.", artifacts=[rec.markdown],
-                actions=[f"Saved brief v{rec.version} (revises v1)"],
+                actions=[f'Brief "{rec.campaign}" v{rec.version} saved (revises v1)'],
             )
         return Reply(text="(fake) no canned answer for that.")
 
@@ -281,7 +285,7 @@ def run_checks(
         results.append((name, ok, detail))
 
     def v1_ok():
-        v1 = briefs.get(1)
+        v1 = briefs.get(1, DEFAULT_CAMPAIGN)
         if v1 is None:
             return False, "no brief v1"
         words = _count_words(v1.draft.email_body)
@@ -301,7 +305,7 @@ def run_checks(
         return n == 2, f"{n} brief version(s)"
 
     def v2_ok():
-        v2 = briefs.get(2)
+        v2 = briefs.get(2, DEFAULT_CAMPAIGN)
         if v2 is None:
             return False, "no brief v2"
         md = v2.markdown
@@ -321,7 +325,7 @@ def run_checks(
         return not problems, "; ".join(problems) or "ok"
 
     def transcript_ok():
-        v2 = briefs.get(2)
+        v2 = briefs.get(2, DEFAULT_CAMPAIGN)
         if v2 is None:
             return False, "no brief v2 to compare"
         marker = turn_marker(len(PHASE1) + 1)
@@ -336,11 +340,16 @@ def run_checks(
         stored = v2.markdown.rstrip("\n")
         return any(stored in f for f in fences), "phase-2 artifact compared with stored v2 markdown"
 
+    def campaigns_ok():
+        names = briefs.campaigns()
+        return names == [DEFAULT_CAMPAIGN], f"campaigns={names}"
+
     check("v1 exists, created, knowledge v0, email <= 150 words", v1_ok)
     check("knowledge v1: buyer is Customer Success, pricing restricted", knowledge_ok)
     check("exactly 2 brief versions (update and retrieval created none)", count_ok)
     check("v2 revises v1 at knowledge v1; Customer Success + handoff; no price text", v2_ok)
     check("phase-2 transcript contains v2 markdown verbatim", transcript_ok)
+    check(f'only the "{DEFAULT_CAMPAIGN}" campaign exists (no stray campaigns)', campaigns_ok)
     return results
 
 

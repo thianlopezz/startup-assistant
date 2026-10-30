@@ -1,9 +1,10 @@
 """Track B: tool definitions, brief validation and rendering.
 
-The five tools the model can call. State changes are recorded in a TurnLog by this code,
+The six tools the model can call. State changes are recorded in a TurnLog by this code,
 not by the model, so the CLI's "what changed" footer can't overclaim.
 """
 
+import difflib
 import json
 import re
 from typing import Any
@@ -11,7 +12,8 @@ from typing import Any
 from claude_agent_sdk import SdkMcpTool, create_sdk_mcp_server, tool
 from pydantic import BaseModel, ValidationError
 
-from startup_assistant.briefs import BriefStore
+from startup_assistant import checker
+from startup_assistant.briefs import DEFAULT_CAMPAIGN, BriefStore, campaign_key
 from startup_assistant.contracts import BriefDraft, BriefRecord
 from startup_assistant.knowledge import KnowledgeStore
 from startup_assistant.seed import SEED_PROFILE
@@ -23,7 +25,10 @@ TOOL_NAMES: list[str] = [
     f"mcp__{SERVER_NAME}__get_latest_brief",
     f"mcp__{SERVER_NAME}__list_briefs",
     f"mcp__{SERVER_NAME}__get_brief",
+    f"mcp__{SERVER_NAME}__compare_briefs",
 ]
+
+CHECK_SKIPPED_NOTE = "Note: the AI brief check could not run; saved after the code checks only."
 
 MAX_EMAIL_WORDS = 150
 
@@ -119,31 +124,39 @@ def render_brief_markdown(draft: BriefDraft) -> str:
 
 
 def render_record_header(record: BriefRecord, latest_version: int) -> str:
+    """`latest_version` is the newest version in the record's own campaign."""
     status = (
         "CURRENT" if record.version >= latest_version else f"superseded by v{latest_version}"
     )
     origin = f"revises v{record.revises}" if record.revises is not None else "new"
     return (
-        f"Brief v{record.version} — {status} · {origin} · "
+        f"Brief \"{record.campaign}\" v{record.version} — {status} · {origin} · "
         f"knowledge v{record.knowledge_version} · {record.created_at}"
     )
 
 
 def brief_index(briefs: BriefStore) -> str:
-    """One line per saved brief; used by list_briefs and the per-turn context."""
+    """Saved briefs grouped by campaign, one line each; used by list_briefs and every turn."""
     records = briefs.list()
     if not records:
         return "No briefs saved yet."
-    latest = records[-1].version
-    lines = []
-    for r in records:
-        origin = f"revised (revises v{r.revises})" if r.kind == "revised" else "created"
-        status = "CURRENT" if r.version == latest else f"superseded by v{latest}"
-        lines.append(
-            f"- v{r.version} · {status} · {origin} · {r.created_at} · "
-            f"\"{r.draft.title}\" · written against knowledge v{r.knowledge_version}"
-        )
-    return "\n".join(lines)
+    sections = []
+    for campaign in briefs.campaigns():
+        in_campaign = briefs.list(campaign)
+        latest = in_campaign[-1].version
+        lines = [f"Campaign \"{campaign}\":"]
+        for r in in_campaign:
+            origin = f"revised (revises v{r.revises})" if r.kind == "revised" else "created"
+            status = "CURRENT" if r.version == latest else f"superseded by v{latest}"
+            lines.append(
+                f"- v{r.version} · {status} · {origin} · {r.created_at} · "
+                f"\"{r.draft.title}\" · written against knowledge v{r.knowledge_version}"
+            )
+        sections.append("\n".join(lines))
+    if len(sections) > 1:
+        last = records[-1]
+        sections.append(f"Most recently saved: \"{last.campaign}\" v{last.version}.")
+    return "\n\n".join(sections)
 
 
 # --- tool input schemas ---------------------------------------------------------------
@@ -177,13 +190,28 @@ def _draft_schema() -> dict[str, Any]:
     return schema
 
 
+_CAMPAIGN_PROP: dict[str, Any] = {
+    "type": "string",
+    "description": f'Campaign name (case-insensitive), e.g. "{DEFAULT_CAMPAIGN}".',
+}
+
 SAVE_BRIEF_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "draft": _draft_schema(),
+        "campaign": {
+            "type": "string",
+            "description": (
+                f'Campaign to save under (case-insensitive). Defaults to "{DEFAULT_CAMPAIGN}". '
+                "A name not used before starts a new campaign at v1."
+            ),
+        },
         "revises": {
             "anyOf": [{"type": "integer"}, {"type": "null"}],
-            "description": "Version number this brief revises. Omit or null for a new brief.",
+            "description": (
+                "Version number this brief revises, in the same campaign. Omit or null for a "
+                "new brief."
+            ),
         },
     },
     "required": ["draft"],
@@ -211,12 +239,44 @@ UPDATE_KNOWLEDGE_SCHEMA: dict[str, Any] = {
     "required": ["summary", "field_changes", "new_rules"],
 }
 
+_READ_CAMPAIGN_PROP: dict[str, Any] = {
+    "type": "string",
+    "description": (
+        "Campaign name (case-insensitive). Omit to use the campaign of the most recently saved "
+        "brief."
+    ),
+}
+
 GET_BRIEF_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "version": {"type": "integer", "description": "The brief version number to fetch."}
+        "version": {"type": "integer", "description": "The brief version number to fetch."},
+        "campaign": _READ_CAMPAIGN_PROP,
     },
     "required": ["version"],
+}
+
+GET_LATEST_BRIEF_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "campaign": {
+            "type": "string",
+            "description": (
+                "Campaign name (case-insensitive). Omit for the most recently saved brief in "
+                "any campaign."
+            ),
+        },
+    },
+}
+
+COMPARE_BRIEFS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "from_version": {"type": "integer", "description": "The older version, e.g. 1."},
+        "to_version": {"type": "integer", "description": "The newer version, e.g. 2."},
+        "campaign": _READ_CAMPAIGN_PROP,
+    },
+    "required": ["from_version", "to_version"],
 }
 
 _EMPTY_SCHEMA: dict[str, Any] = {"type": "object", "properties": {}}
@@ -229,15 +289,48 @@ def _text(text: str, is_error: bool = False) -> dict[str, Any]:
     return result
 
 
+def _diff_fence(diff: str) -> str:
+    """A backtick fence longer than any backtick run in the diff, so stored code blocks
+    can't close it early."""
+    longest = max((len(run) for run in re.findall(r"`+", diff)), default=0)
+    return "`" * max(3, longest + 1)
+
+
 def make_tools(
     knowledge: KnowledgeStore, briefs: BriefStore, turn: TurnLog
 ) -> dict[str, SdkMcpTool[Any]]:
-    """The five tools, keyed by short name. Handlers close over the stores and the TurnLog."""
+    """The six tools, keyed by short name. Handlers close over the stores and the TurnLog."""
     retrieved = turn.retrieved
 
     def forget_stale() -> None:
         """Drop copies from earlier turns: the turn reset empties `artifacts`, not `retrieved`."""
         retrieved[:] = [a for a in retrieved if a in turn.artifacts]
+
+    def display_name(campaign: str) -> str:
+        """The stored display name for a campaign, or the cleaned-up name if it has none yet."""
+        key = campaign_key(campaign)
+        return next((c for c in briefs.campaigns() if campaign_key(c) == key), campaign.strip())
+
+    def requested_campaign(args: dict[str, Any]) -> str | None:
+        value = args.get("campaign")
+        if value is None:
+            return None
+        return str(value).strip() or None
+
+    def read_campaign(args: dict[str, Any]) -> str:
+        """For reads: the named campaign, else the one the most recent brief was saved in."""
+        named = requested_campaign(args)
+        if named is not None:
+            return display_name(named)
+        latest = briefs.latest()
+        return latest.campaign if latest is not None else DEFAULT_CAMPAIGN
+
+    def campaign_list() -> str:
+        return ", ".join(f'"{c}"' for c in briefs.campaigns())
+
+    def latest_version_in(campaign: str) -> int:
+        latest = briefs.latest(campaign)
+        return latest.version if latest is not None else 0
 
     @tool(
         "update_company_knowledge",
@@ -256,7 +349,9 @@ def make_tools(
         turn.actions.append(f"Company knowledge updated → v{update.version}")
         stale = [b for b in briefs.list() if b.knowledge_version < update.version]
         if stale:
-            names = ", ".join(f"v{b.version} (knowledge v{b.knowledge_version})" for b in stale)
+            names = ", ".join(
+                f'"{b.campaign}" v{b.version} (knowledge v{b.knowledge_version})' for b in stale
+            )
             brief_note = (
                 f"No brief was revised. These saved briefs were written against older "
                 f"knowledge and are now stale: {names}. Tell the founder this and offer to "
@@ -268,12 +363,14 @@ def make_tools(
 
     @tool(
         "save_brief",
-        "Validate and save a campaign brief as a new version. Use for a new brief, or with "
-        "`revises` set to the version you revised (call get_latest_brief first). The brief "
-        "is rejected and nothing is saved if the email body exceeds 150 words, there are not "
-        "exactly 2 channels, it makes any 'half'/50% claim, or it mentions "
-        "pricing or commercial terms while pricing is restricted. On rejection, fix the listed problems and "
-        "call again.",
+        "Validate and save a campaign brief as a new version in a campaign (default "
+        f'"{DEFAULT_CAMPAIGN}"; each campaign numbers its own versions). Use for a new brief, '
+        "or with `revises` set to the version you revised in the same campaign (call "
+        "get_latest_brief first). The brief is rejected and nothing is saved if the email body "
+        "exceeds 150 words, there are not exactly 2 channels, it makes any 'half'/50% claim, "
+        "or it mentions pricing or commercial terms while pricing is restricted; an AI review "
+        "against company knowledge can also reject it. On rejection, fix the listed problems "
+        "and call again.",
         SAVE_BRIEF_SCHEMA,
     )
     async def save_brief(args: dict[str, Any]) -> dict[str, Any]:
@@ -292,57 +389,106 @@ def make_tools(
             ]
             return _text("Brief NOT saved. Fix and retry:\n- " + "\n- ".join(problems), True)
 
+        campaign = display_name(requested_campaign(args) or DEFAULT_CAMPAIGN)
         revises = args.get("revises")
         errors = validate_brief(draft, knowledge.pricing_restricted)
-        if revises is not None and briefs.get(revises) is None:
-            errors.append(f"revises={revises}: there is no saved brief v{revises}.")
+        if revises is not None and briefs.get(revises, campaign) is None:
+            elsewhere = [f'"{c}"' for c in briefs.campaigns() if briefs.get(revises, c)]
+            hint = (
+                f" v{revises} exists in {', '.join(elsewhere)}; pass that campaign to revise "
+                "it there."
+                if elsewhere
+                else ""
+            )
+            errors.append(
+                f'revises={revises}: campaign "{campaign}" has no saved brief v{revises}.{hint}'
+            )
         if errors:
             return _text("Brief NOT saved. Fix and retry:\n- " + "\n- ".join(errors), True)
 
+        check_note = ""
+        if checker.checker_enabled():
+            try:
+                problems = await checker.check_brief(
+                    draft, knowledge.render(), knowledge.pricing_restricted
+                )
+            except Exception:  # the contract says it never raises; fail open like None if it does
+                problems = None
+            if problems:
+                return _text(
+                    "Brief check found problems:\n- "
+                    + "\n- ".join(problems)
+                    + "\n\nBrief NOT saved. Fix these problems and call save_brief again.",
+                    True,
+                )
+            if problems is None:
+                check_note = f"\n\n{CHECK_SKIPPED_NOTE}"
+
         markdown = render_brief_markdown(draft)
-        record = briefs.save(
-            draft=draft,
-            markdown=markdown,
-            kind="revised" if revises is not None else "created",
-            revises=revises,
-            knowledge_version=knowledge.version,
-            request=turn.user_text,
-        )
+        try:
+            record = briefs.save(
+                draft=draft,
+                markdown=markdown,
+                kind="revised" if revises is not None else "created",
+                revises=revises,
+                knowledge_version=knowledge.version,
+                request=turn.user_text,
+                campaign=campaign,
+            )
+        except ValueError as exc:
+            return _text(f"Brief NOT saved. {exc}", True)
         # Copies fetched by get_latest_brief/get_brief earlier in this turn (e.g. to revise) aren't
         # what the founder asked to see once a new version exists. This also drops a v1 the
         # founder asked to see in the same turn ("show me v1 and draft a new brief"): known, kept.
         forget_stale()
         turn.artifacts[:] = [a for a in turn.artifacts if a not in retrieved]
         retrieved.clear()
-        if revises is not None:
-            turn.actions.append(f"Brief v{record.version} saved (revises v{revises})")
-        else:
-            turn.actions.append(f"Brief v{record.version} saved (new)")
+        origin = f"revises v{revises}" if revises is not None else "new"
+        turn.actions.append(f'Brief "{record.campaign}" v{record.version} saved ({origin})')
         turn.artifacts.append(render_record_header(record, record.version) + "\n\n" + markdown)
         return _text(
-            f"Saved brief v{record.version}"
-            + (f" (revises v{revises})" if revises is not None else " (new)")
-            + f", written against knowledge v{record.knowledge_version}. The full brief is "
-            "shown to the founder below your reply, so don't repeat it; summarise briefly."
+            f'Saved brief "{record.campaign}" v{record.version} ({origin}), written against '
+            f"knowledge v{record.knowledge_version}. The full brief is shown to the founder "
+            "below your reply, so don't repeat it; summarise briefly." + check_note
         )
 
     @tool(
         "get_latest_brief",
         "Fetch the latest saved campaign brief exactly as stored. It is shown to the founder "
-        "verbatim. Use for 'show me the brief' requests and before revising a brief.",
-        _EMPTY_SCHEMA,
+        "verbatim. Use for 'show me the brief' requests and before revising a brief. Without "
+        "`campaign` it returns the most recently saved brief in any campaign.",
+        GET_LATEST_BRIEF_SCHEMA,
     )
     async def get_latest_brief(args: dict[str, Any]) -> dict[str, Any]:
         forget_stale()
-        record = briefs.latest()
-        if record is None:
-            return _text("No brief saved yet.")
+        named = requested_campaign(args)
+        if named is not None:
+            record = briefs.latest(named)
+            if record is None:
+                known = campaign_list()
+                return _text(
+                    f'No brief saved in campaign "{named}".'
+                    + (f" Saved campaigns: {known}." if known else " No brief saved yet.")
+                )
+        else:
+            record = briefs.latest()
+            if record is None:
+                return _text("No brief saved yet.")
         header = render_record_header(record, record.version)
         artifact = header + "\n\n" + record.markdown
         turn.artifacts.append(artifact)
         retrieved.append(artifact)
         older = record.version - 1
-        note = f" {older} older version(s) exist." if older > 0 else ""
+        note = (
+            f' {older} older version(s) exist in "{record.campaign}".' if older > 0 else ""
+        )
+        others = [c for c in briefs.campaigns() if c != record.campaign]
+        if others:
+            listed = ", ".join(f'"{c}" (latest v{latest_version_in(c)})' for c in others)
+            note += (
+                f" Other campaigns also have briefs: {listed}. Tell the founder this is the "
+                f'"{record.campaign}" brief and that the others exist.'
+            )
         return _text(
             f"{artifact}\n\n(This stored brief is shown to the founder verbatim below your "
             f"reply; don't reprint it.{note})"
@@ -352,18 +498,21 @@ def make_tools(
         "get_brief",
         "Fetch a specific saved campaign brief version exactly as stored. It is shown to the "
         "founder verbatim. Use when the founder asks for a particular, older or previous "
-        "version (see list_briefs for version numbers).",
+        "version (see list_briefs for version numbers; versions are numbered per campaign).",
         GET_BRIEF_SCHEMA,
     )
     async def get_brief(args: dict[str, Any]) -> dict[str, Any]:
         forget_stale()
         version = int(args["version"])
-        record = briefs.get(version)
+        campaign = read_campaign(args)
+        record = briefs.get(version, campaign)
         if record is None:
-            return _text(f"No brief v{version} saved.")
-        latest = briefs.latest()
-        latest_version = latest.version if latest is not None else record.version
-        artifact = render_record_header(record, latest_version) + "\n\n" + record.markdown
+            return _text(f'No brief v{version} saved. (Looked in campaign "{campaign}".)')
+        artifact = (
+            render_record_header(record, latest_version_in(record.campaign))
+            + "\n\n"
+            + record.markdown
+        )
         turn.artifacts.append(artifact)
         retrieved.append(artifact)
         return _text(
@@ -373,16 +522,62 @@ def make_tools(
 
     @tool(
         "list_briefs",
-        "List every saved brief version: kind, date, title, knowledge version it was written "
-        "against.",
+        "List every saved brief version, grouped by campaign: kind, date, title, knowledge "
+        "version it was written against.",
         _EMPTY_SCHEMA,
     )
     async def list_briefs(args: dict[str, Any]) -> dict[str, Any]:
         return _text(brief_index(briefs))
 
+    @tool(
+        "compare_briefs",
+        "Show what changed between two saved versions of a campaign's brief. The app builds a "
+        "line-by-line diff of the stored briefs and shows it to the founder verbatim. Use for "
+        "'what changed between v1 and v2' requests.",
+        COMPARE_BRIEFS_SCHEMA,
+    )
+    async def compare_briefs(args: dict[str, Any]) -> dict[str, Any]:
+        a, b = int(args["from_version"]), int(args["to_version"])
+        campaign = read_campaign(args)
+        old, new = briefs.get(a, campaign), briefs.get(b, campaign)
+        missing = [f"v{v}" for v, r in ((a, old), (b, new)) if r is None]
+        if old is None or new is None:
+            return _text(
+                f'Cannot compare: campaign "{campaign}" has no saved brief '
+                f"{' or '.join(missing)}. Check list_briefs for the version numbers.",
+                True,
+            )
+        diff = "\n".join(
+            difflib.unified_diff(
+                old.markdown.splitlines(),
+                new.markdown.splitlines(),
+                fromfile=f"v{a}",
+                tofile=f"v{b}",
+                lineterm="",
+            )
+        )
+        title = f'Changes in "{old.campaign}": v{a} → v{b}'
+        if diff:
+            fence = _diff_fence(diff)
+            artifact = f"{title}\n\n{fence}diff\n{diff}\n{fence}"
+        else:
+            artifact = f"{title}\n\nNo differences: the two stored briefs are identical."
+        turn.artifacts.append(artifact)
+        return _text(
+            f"{artifact}\n\n(This diff is shown to the founder verbatim below your reply; don't "
+            "reprint it. You may add a one-paragraph summary of what changed.)"
+        )
+
     return {
         t.name: t
-        for t in (update_company_knowledge, save_brief, get_latest_brief, list_briefs, get_brief)
+        for t in (
+            update_company_knowledge,
+            save_brief,
+            get_latest_brief,
+            list_briefs,
+            get_brief,
+            compare_briefs,
+        )
     }
 
 

@@ -47,3 +47,10 @@ def test_system_prompt_get_brief_and_implicit_pricing():
     assert "get_brief" in p
     assert "commercial terms" in p
     assert "under review" in p and "leave the topic out" in p
+
+
+def test_system_prompt_campaigns_and_compare():
+    p = SYSTEM_PROMPT.lower()
+    assert "customer acquisition" in p
+    assert "campaign" in p and "which campaign" in p
+    assert "compare_briefs" in p and "what changed" in p

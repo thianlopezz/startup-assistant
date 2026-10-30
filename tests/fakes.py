@@ -1,12 +1,13 @@
-"""In-memory stand-ins for Track A's stores, matching the stub signatures exactly.
+"""In-memory stand-ins for the stores, so tool tests touch no files.
 
-Track B tests use these so they don't depend on knowledge.py / briefs.py being implemented.
+FakeBriefStore reuses BriefStore's campaign/version logic over an in-memory BriefsFile.
 """
 
 from datetime import datetime, timezone
 from pathlib import Path
 
-from startup_assistant.contracts import BriefDraft, BriefRecord, KnowledgeUpdate
+from startup_assistant.briefs import BriefsFile, BriefStore
+from startup_assistant.contracts import KnowledgeUpdate
 from startup_assistant.seed import SEED_MARKETING_NOTES, SEED_PROFILE
 
 
@@ -63,38 +64,15 @@ class FakeKnowledgeStore:
         return "\n".join(lines)
 
 
-class FakeBriefStore:
+class FakeBriefStore(BriefStore):
+    """The real BriefStore's campaign and version logic, kept in memory instead of a file."""
+
     def __init__(self, path: Path | None = None):
         self.path = path
-        self._records: list[BriefRecord] = []
+        self._data = BriefsFile()
 
-    def save(
-        self,
-        draft: BriefDraft,
-        markdown: str,
-        kind: str,
-        revises: int | None,
-        knowledge_version: int,
-        request: str,
-    ) -> BriefRecord:
-        record = BriefRecord(
-            version=len(self._records) + 1,
-            created_at=_now(),
-            kind=kind,
-            revises=revises,
-            knowledge_version=knowledge_version,
-            request=request,
-            draft=draft,
-            markdown=markdown,
-        )
-        self._records.append(record)
-        return record
+    def _load(self) -> BriefsFile:
+        return self._data
 
-    def latest(self) -> BriefRecord | None:
-        return self._records[-1] if self._records else None
-
-    def get(self, version: int) -> BriefRecord | None:
-        return next((r for r in self._records if r.version == version), None)
-
-    def list(self) -> list[BriefRecord]:
-        return list(self._records)
+    def _write(self, data: BriefsFile) -> None:
+        self._data = data
