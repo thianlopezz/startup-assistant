@@ -111,14 +111,14 @@ Environment variables (all optional):
 
 ## Assumptions, design decisions and shortcuts
 
-- **Pricing scope.** The "no pricing" rule covers campaign materials (briefs and draft emails), as the founder wrote it. After the update, the `pricing` field reads "under review". A direct pricing question in chat gets that status, and the old price is mentioned only as out of date. `save_brief` enforces the rule in code. Chat replies have a code check too: once pricing is restricted, a reply that states a price as current gets one automatic rewrite. If it still does, it gets a note that the figure isn't current. The check is a simple heuristic, so a frequency like "4 per month" also triggers a rewrite.
+- **Pricing scope.** The "no pricing" rule covers campaign materials (briefs and draft emails), as the founder wrote it. After the update, the `pricing` field reads "under review". A direct pricing question in chat gets that status, and the old price is mentioned only as out of date. `save_brief` enforces the rule in code. Chat replies have a code check too: once pricing is restricted, a reply that states a price as current gets one automatic rewrite. If it still does, it gets a note that the figure isn't current. A sentence counts as a price claim when it has a currency amount (`$`, `€`, `£`, USD/EUR, "dollars"), or a per-month number together with money words (price, cost, charge, fee, plan, subscription, "starts at"…). Past or under-review wording is exempt. So "we run 4 per month" is not flagged, but "starts at 299/mo" is.
 - **Guardrails in code, not only in the prompt.** `save_brief` rejects a brief that has anything other than 2 channels, an email body over 150 words, a reduction claim with "half" ("cuts … in half", "by half", "half the time", "halve", "50%"; "half-day" is fine), or, while pricing is restricted, any `$`, "N per month", the words price/pricing or "commercial terms". The model gets the error and retries. The prompt also tells it not to mention that pricing was left out.
 - **AI brief checker.** After the code checks pass, a second, tool-less model call (`claude-sonnet-5-5`) reads the brief next to the company knowledge. It flags things keywords miss: made-up stats, testimonials, integrations or capabilities, any hint at pricing, reworded performance claims, channels presented as proven, or an audience that contradicts the knowledge. Problems reject the save and the assistant fixes the brief. It takes a few seconds per save and is capped at 2 rejections per turn; after that the brief is saved and the leftover points are shown to the founder. If the checker itself fails, the brief is saved with a note saying the check was skipped. `ASSISTANT_BRIEF_CHECK=0` turns it off.
 - **Footer written by code.** The `[Changed: …]` footer comes from tool code, not from the model, so the assistant cannot claim a brief was revised when only knowledge changed.
 - **Named campaigns.** Each brief belongs to a campaign, and each campaign has its own versions (v1, v2, …). A revision points at the version it revises, and the newest is current. The first brief goes in "Customer acquisition" unless the founder names another campaign, and data saved before campaigns existed loads into that campaign. "Show me the latest brief" shows the most recently saved brief and names any other campaigns. Any version can be shown ("show me version 1", labelled as superseded). "What changed between v1 and v2?" prints a line-by-line diff made by code (`difflib`), and the model adds a short summary.
 - **Knowledge updates.** An update records the founder's message word for word, a summary, changes to the 9 profile fields, and new rules. Facts that don't fit a field go in as rules.
 - **Context per turn.** Turns always carry the brief index and the founder's message. The full company knowledge goes only on the first turn of a session, after any change, after an aborted turn, or after the SDK compacts the conversation; otherwise the turn says "Unchanged since vN". This departs from the original design (knowledge in every request) to keep long sessions small. It was a deliberate choice.
-- **Storage.** Plain JSON files with an atomic replace-on-write. Single process, no locking, no recovery from a corrupt file.
+- **Storage.** Plain JSON files with an atomic replace-on-write. Every save takes a file lock (`filelock`, a `.lock` file next to the JSON), so two assistants on the same data folder can't produce duplicate versions or lose writes; a test with 4 processes saving at once checks this. If the lock is busy for more than 10s the save is refused with a "try again" message. Reads don't lock. There's no recovery from a corrupt file.
 - **Assumptions over questions.** For briefs, the assistant goes ahead and lists assumptions and open questions instead of asking first. Retrieval never generates anything: with nothing saved it says so and offers to create a brief.
 - **Libraries over hand-written code.** The Claude Agent SDK (agent loop, tool calls, login), pydantic (types, validation, JSON) and rich (terminal output).
 - **Locked down.** Built-in Claude Code tools (Bash, Read, Write, web search …), other MCP servers, and user/project settings and CLAUDE.md are all disabled for the assistant (`tools=[]`, `strict_mcp_config`, `setting_sources=[]`, `permission_mode="dontAsk"`).
@@ -178,16 +178,24 @@ Environment variables (all optional):
     - A checker that keeps disagreeing could loop for minutes; it's now capped at 2 rejections per turn.
   - Smaller fixes: the checker's model stream is closed on timeout; a revision without a campaign name stays in the current campaign; diffs show in a "Changes" panel.
   - Re-ran after the fixes: 167 unit tests, 4 live tests, live demo 6/6.
+- **Fourth round** (cleanup; 3 parallel agents):
+  - The chat pricing check needs money context, so "we run 4 per month" no longer triggers a rewrite. Regression tests check that these cases were flagged by the old code and aren't now.
+  - File locking for both stores, with a multi-process test. With the lock removed, that test failed (duplicate versions, lost writes).
+  - An explicit `TurnLog.start()` per turn replaced an attribute-assignment trick.
+  - The review found two problems, both fixed with tests. The new pricing check had stopped catching "starts at 299/mo" and "299 dollars"; it now handles currency words and "starts at". A busy lock gave a raw error; it now returns a clear "try again".
+  - Live tests: 4 passed. Live demo: 6/6. Unit tests: 197 passed.
 
 - **Reviewer setup:** a fresh copy was set up from scratch with `./run.sh`. Then `test`, `demo` and a live question all worked. With no login and no key, startup stops with the instructions instead of the SDK's "Not logged in · Please run /login".
 
 ## Unfinished and next steps
 
-- The code guardrails are keyword checks, and the AI checker is one model's judgement. Neither is proof: a subtle claim could still pass both.
-- The chat pricing check is a heuristic (see above). It can trigger a needless rewrite, for example on "4 per month".
-- Each save makes one extra model call (the checker), so saving takes a few seconds longer.
-- In piped mode, a Ctrl-C at the prompt before the first reply doesn't interrupt the read. In a real terminal it exits normally.
-- No locking: two assistants on the same data folder at once could overwrite each other.
+Everything planned is built. What remains are accepted limitations:
+
+- **Guardrails are not proof.** The code checks are keyword and regex based, and the AI checker is one model's judgement. A subtle claim could pass both. A human should still review a brief before it's used.
+- **The chat pricing check is a heuristic.** It catches prices stated as current in the usual forms, but an unusual phrasing could slip through and an unusual sentence could trigger a needless rewrite.
+- **The checker costs time.** Each brief save makes one extra model call, a few seconds. Turn it off with `ASSISTANT_BRIEF_CHECK=0`.
+- **Piped input and Ctrl-C.** With piped input (not a terminal), a Ctrl-C at the prompt before the first reply doesn't interrupt the read. Piped input is for scripts, so this was left as is.
+- **A busy lock waits.** A save waits up to 10s for a lock held by another process, and the assistant can't do anything else meanwhile. That's fine at this scale.
 
 ## AI tools and models used
 

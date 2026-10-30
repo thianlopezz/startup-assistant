@@ -2,86 +2,89 @@
   "records": [
     {
       "version": 1,
-      "created_at": "2026-10-30T21:11:52+00:00",
+      "created_at": "2026-10-30T21:26:21+00:00",
       "kind": "created",
       "revises": null,
       "knowledge_version": 0,
       "request": "Create a brief for our next customer acquisition campaign using what we know about the company. Save it so I can retrieve it later.",
       "draft": {
-        "title": "Clear ownership for client onboarding at small agencies and consultancies",
-        "audience": "Agencies and consultancies with 10–50 employees whose customer onboarding is run through email and spreadsheets.",
+        "title": "Customer acquisition: clear ownership for agency onboarding",
+        "audience": "Agencies and consultancies with 10–50 employees whose customer onboarding currently runs across email and spreadsheets.",
         "buyer": "Founder or operations lead.",
-        "main_message": "HarborDesk replaces scattered onboarding emails and spreadsheets with shared checklists, named task owners, reminders and progress reporting, so every handoff has an owner and everyone can see where each onboarding stands.",
+        "main_message": "HarborDesk brings customer onboarding out of scattered emails and spreadsheets, so every task has a clear owner and everyone can see where each new client stands.",
         "channels": [
           {
             "name": "LinkedIn posts",
-            "reason": "Proposal: founders and operations leads at small agencies and consultancies are reachable on LinkedIn, and we have used it before, so the team already knows how to run it. No performance data yet, so treat this as a test."
+            "reason": "Proposed because founders and operations leads at small agencies and consultancies are reachable there, and we have used it before. No performance data yet, so treat this as a test."
           },
           {
             "name": "Targeted email outreach",
-            "reason": "Proposal: lets us speak directly to the buyer at a defined list of 10–50 person agencies and consultancies, and we have used it before. No performance data yet, so we should track replies to compare against LinkedIn."
+            "reason": "Proposed because it lets us speak directly to the buyer about a specific operational problem, and we have used it before. No performance data yet, so results should be tracked from this campaign."
           }
         ],
-        "email_subject": "Who owns the next step in your client onboarding?",
-        "email_body": "Hi [First name],\n\nWhen client onboarding runs through email threads and spreadsheets, handoffs slip. Someone assumes a task is covered, and it isn't.\n\nHarborDesk gives your team a shared onboarding checklist for each client. Every task has a named owner, reminders go out before things stall, and progress reporting shows where each onboarding stands.\n\nIt's built for agencies and consultancies like [Company], where a small team handles several client onboardings at once.\n\nWould a short walkthrough next week be useful? I can show you how a typical onboarding would look in HarborDesk.\n\nThanks,\n[Your name]\nHarborDesk",
+        "email_subject": "Who owns the next step with your new client?",
+        "email_body": "Hi [First name],\n\nWhen a new client signs, onboarding at many agencies ends up split across email threads and spreadsheets. That is usually where handoffs get missed.\n\nHarborDesk keeps onboarding in one place:\n- Shared onboarding checklists for each client\n- A named owner for every task\n- Reminders so steps don't stall\n- Progress reporting so you can see where each client stands\n\nThe result is clearer ownership and visibility from kickoff onward.\n\nIf onboarding at [Company] runs through email and spreadsheets today, would a short call to walk through how HarborDesk could fit your process be useful?\n\nThanks,\n[Your name]\n[Your title], HarborDesk",
         "assumptions": [
-          "Prospects currently manage onboarding mainly in email and spreadsheets, as described in our problem statement.",
+          "Prospects in the target segment currently manage onboarding mainly through email and spreadsheets.",
           "The founder or operations lead is both the right first contact and the person who signs off.",
-          "Prospects will respond to an offer of a short walkthrough or demo.",
-          "LinkedIn and email are proposed because we have used them before, not because they are proven to perform."
+          "The campaign aims to book introductory calls; no other goal or target has been set.",
+          "LinkedIn and targeted email are proposed based on past use, not on evidence that they perform best."
         ],
         "open_questions": [
-          "How will we build the target list of 10–50 person agencies and consultancies, and how many contacts do we aim for?",
-          "What does success look like for this campaign (e.g. replies, walkthroughs booked), and over what period?",
-          "Who will run the walkthroughs, and how much capacity do we have?",
-          "How should we answer prospects who ask about integrations, given none is approved for marketing yet?",
-          "Are there any customer stories we have permission to use in later follow-ups?"
+          "What is the campaign goal and target (e.g. number of calls booked), and over what timeframe?",
+          "Is there a prospect list for targeted outreach, and who will send the emails?",
+          "Who will publish the LinkedIn posts (founder's profile or company page), and how often?",
+          "What call to action do we want: an intro call, a demo, or a trial?",
+          "How should we answer prospects who ask about integrations while none are approved to mention?",
+          "How will we track results by channel so future recommendations can be based on data?"
         ]
       },
-      "markdown": "# Clear ownership for client onboarding at small agencies and consultancies\n\n## Audience\n\nAgencies and consultancies with 10–50 employees whose customer onboarding is run through email and spreadsheets.\n\n## Buyer\n\nFounder or operations lead.\n\n## Main message\n\nHarborDesk replaces scattered onboarding emails and spreadsheets with shared checklists, named task owners, reminders and progress reporting, so every handoff has an owner and everyone can see where each onboarding stands.\n\n## Recommended channels (proposals)\n\n1. **LinkedIn posts** — Proposal: founders and operations leads at small agencies and consultancies are reachable on LinkedIn, and we have used it before, so the team already knows how to run it. No performance data yet, so treat this as a test.\n2. **Targeted email outreach** — Proposal: lets us speak directly to the buyer at a defined list of 10–50 person agencies and consultancies, and we have used it before. No performance data yet, so we should track replies to compare against LinkedIn.\n\n## Draft email\n\n**Subject:** Who owns the next step in your client onboarding?\n\nHi [First name],\n\nWhen client onboarding runs through email threads and spreadsheets, handoffs slip. Someone assumes a task is covered, and it isn't.\n\nHarborDesk gives your team a shared onboarding checklist for each client. Every task has a named owner, reminders go out before things stall, and progress reporting shows where each onboarding stands.\n\nIt's built for agencies and consultancies like [Company], where a small team handles several client onboardings at once.\n\nWould a short walkthrough next week be useful? I can show you how a typical onboarding would look in HarborDesk.\n\nThanks,\n[Your name]\nHarborDesk\n\n_Draft for review — not sent._\n\n## Assumptions\n\n- Prospects currently manage onboarding mainly in email and spreadsheets, as described in our problem statement.\n- The founder or operations lead is both the right first contact and the person who signs off.\n- Prospects will respond to an offer of a short walkthrough or demo.\n- LinkedIn and email are proposed because we have used them before, not because they are proven to perform.\n\n## Open questions\n\n- How will we build the target list of 10–50 person agencies and consultancies, and how many contacts do we aim for?\n- What does success look like for this campaign (e.g. replies, walkthroughs booked), and over what period?\n- Who will run the walkthroughs, and how much capacity do we have?\n- How should we answer prospects who ask about integrations, given none is approved for marketing yet?\n- Are there any customer stories we have permission to use in later follow-ups?\n",
+      "markdown": "# Customer acquisition: clear ownership for agency onboarding\n\n## Audience\n\nAgencies and consultancies with 10–50 employees whose customer onboarding currently runs across email and spreadsheets.\n\n## Buyer\n\nFounder or operations lead.\n\n## Main message\n\nHarborDesk brings customer onboarding out of scattered emails and spreadsheets, so every task has a clear owner and everyone can see where each new client stands.\n\n## Recommended channels (proposals)\n\n1. **LinkedIn posts** — Proposed because founders and operations leads at small agencies and consultancies are reachable there, and we have used it before. No performance data yet, so treat this as a test.\n2. **Targeted email outreach** — Proposed because it lets us speak directly to the buyer about a specific operational problem, and we have used it before. No performance data yet, so results should be tracked from this campaign.\n\n## Draft email\n\n**Subject:** Who owns the next step with your new client?\n\nHi [First name],\n\nWhen a new client signs, onboarding at many agencies ends up split across email threads and spreadsheets. That is usually where handoffs get missed.\n\nHarborDesk keeps onboarding in one place:\n- Shared onboarding checklists for each client\n- A named owner for every task\n- Reminders so steps don't stall\n- Progress reporting so you can see where each client stands\n\nThe result is clearer ownership and visibility from kickoff onward.\n\nIf onboarding at [Company] runs through email and spreadsheets today, would a short call to walk through how HarborDesk could fit your process be useful?\n\nThanks,\n[Your name]\n[Your title], HarborDesk\n\n_Draft for review — not sent._\n\n## Assumptions\n\n- Prospects in the target segment currently manage onboarding mainly through email and spreadsheets.\n- The founder or operations lead is both the right first contact and the person who signs off.\n- The campaign aims to book introductory calls; no other goal or target has been set.\n- LinkedIn and targeted email are proposed based on past use, not on evidence that they perform best.\n\n## Open questions\n\n- What is the campaign goal and target (e.g. number of calls booked), and over what timeframe?\n- Is there a prospect list for targeted outreach, and who will send the emails?\n- Who will publish the LinkedIn posts (founder's profile or company page), and how often?\n- What call to action do we want: an intro call, a demo, or a trial?\n- How should we answer prospects who ask about integrations while none are approved to mention?\n- How will we track results by channel so future recommendations can be based on data?\n",
       "campaign": "Customer acquisition"
     },
     {
       "version": 2,
-      "created_at": "2026-10-30T21:12:21+00:00",
+      "created_at": "2026-10-30T21:27:15+00:00",
       "kind": "revised",
       "revises": 1,
       "knowledge_version": 1,
       "request": "Update the campaign brief for our new audience. Focus on coordinating onboarding handoffs across teams.",
       "draft": {
-        "title": "Coordinating onboarding handoffs across teams at B2B software companies",
-        "audience": "B2B software companies with 100–500 employees where customer onboarding passes between several teams and is coordinated through email and spreadsheets.",
+        "title": "Customer acquisition: coordinating onboarding handoffs across teams",
+        "audience": "B2B software companies with 100–500 employees where customer onboarding passes between several teams and is tracked across email and spreadsheets.",
         "buyer": "Head of Customer Success.",
-        "main_message": "HarborDesk keeps cross-team onboarding handoffs from slipping: one shared checklist per customer, an assigned owner for every task, reminders before steps stall, and progress reporting that shows where each onboarding stands.",
+        "main_message": "HarborDesk gives every onboarding handoff between teams a clear owner and a shared view of progress, so new customers don't get stuck between email threads and spreadsheets.",
         "channels": [
           {
             "name": "LinkedIn posts",
-            "reason": "Proposal: Heads of Customer Success at B2B software companies are reachable on LinkedIn, and posts about cross-team onboarding handoffs speak to a problem they own. We have used LinkedIn before, but there is no performance data, so treat this as a test."
+            "reason": "Proposed because Heads of Customer Success at B2B software companies can be reached there with content about cross-team onboarding handoffs, and we have used it before. No performance data yet, so treat this as a test."
           },
           {
             "name": "Targeted email outreach",
-            "reason": "Proposal: lets us reach the Head of Customer Success directly at a defined list of 100–500 person B2B software companies, and we have used it before. No performance data yet, so we should track replies to compare against LinkedIn."
+            "reason": "Proposed because it lets us speak directly to the Head of Customer Success about a specific handoff problem, and we have used it before. No performance data yet, so results should be tracked from this campaign."
           }
         ],
-        "email_subject": "Who owns the next onboarding handoff?",
-        "email_body": "Hi [First name],\n\nWhen a new customer signs, onboarding usually passes between several teams. If those handoffs live in email threads and spreadsheets, steps get missed and nobody is sure who owns what.\n\nHarborDesk gives every team one shared onboarding checklist per customer. Each task has an assigned owner, reminders go out before steps stall, and progress reporting shows where every onboarding stands.\n\nFor a customer success team at a company like [Company], that means a clear owner at every handoff and one view across all active onboardings.\n\nWould a short walkthrough next week be useful? I can show you how a cross-team onboarding would look in HarborDesk.\n\nThanks,\n[Your name]\nHarborDesk",
+        "email_subject": "Where do onboarding handoffs get stuck at [Company]?",
+        "email_body": "Hi [First name],\n\nAt a growing software company, onboarding a new customer usually involves several teams. When the handoffs between them live in email threads and spreadsheets, steps get missed and nobody is sure who owns what.\n\nHarborDesk keeps cross-team onboarding in one place:\n- Shared onboarding checklists every team works from\n- A named owner for each task, so handoffs are explicit\n- Reminders so steps don't stall between teams\n- Progress reporting so you can see where each customer stands\n\nThe result is clearer ownership and visibility from kickoff onward.\n\nIf onboarding handoffs at [Company] run through email and spreadsheets today, would a short call to walk through how HarborDesk could fit your process be useful?\n\nThanks,\n[Your name]\n[Your title], HarborDesk",
         "assumptions": [
-          "At 100–500 person B2B software companies, customer onboarding involves handoffs between several teams (for example sales and customer success).",
-          "These companies coordinate onboarding mainly through email and spreadsheets, as described in our problem statement.",
-          "The Head of Customer Success owns onboarding outcomes and is the right first contact as well as the person who signs off.",
-          "Prospects will respond to an offer of a short walkthrough.",
-          "LinkedIn and email are proposed because we have used them before, not because they are proven to perform."
+          "Onboarding at companies in the target segment involves handoffs between more than one team; which teams are involved is not confirmed.",
+          "Prospects currently coordinate those handoffs mainly through email and spreadsheets.",
+          "The Head of Customer Success is both the right first contact and the person who signs off.",
+          "The campaign aims to book introductory calls; no other goal or target has been set.",
+          "LinkedIn and targeted email are proposed based on past use, not on evidence that they perform best."
         ],
         "open_questions": [
-          "Which teams are typically involved in onboarding handoffs at our target companies, and should the email name them?",
-          "Does the Head of Customer Success sign off alone, or do other stakeholders join the decision at companies of this size?",
-          "How will we build the target list of 100–500 person B2B software companies, and how many contacts do we aim for?",
-          "What does success look like for this campaign (e.g. replies, walkthroughs booked), and over what period?",
-          "How should we answer prospects who ask about integrations, given none is approved for marketing yet?",
-          "Who will run the walkthroughs, and how much capacity do we have?"
+          "Which teams are typically involved in onboarding handoffs at these companies, and should the email name them?",
+          "Does anyone besides the Head of Customer Success need to approve the purchase at companies of this size?",
+          "What is the campaign goal and target (e.g. number of calls booked), and over what timeframe?",
+          "Is there a prospect list of Heads of Customer Success at B2B software companies with 100–500 employees, and who will send the emails?",
+          "Who will publish the LinkedIn posts (founder's profile or company page), and how often?",
+          "What call to action do we want: an intro call or a product walkthrough?",
+          "How should we answer prospects who ask about integrations while none are approved to mention?",
+          "How will we track results by channel so future recommendations can be based on data?"
         ]
       },
-      "markdown": "# Coordinating onboarding handoffs across teams at B2B software companies\n\n## Audience\n\nB2B software companies with 100–500 employees where customer onboarding passes between several teams and is coordinated through email and spreadsheets.\n\n## Buyer\n\nHead of Customer Success.\n\n## Main message\n\nHarborDesk keeps cross-team onboarding handoffs from slipping: one shared checklist per customer, an assigned owner for every task, reminders before steps stall, and progress reporting that shows where each onboarding stands.\n\n## Recommended channels (proposals)\n\n1. **LinkedIn posts** — Proposal: Heads of Customer Success at B2B software companies are reachable on LinkedIn, and posts about cross-team onboarding handoffs speak to a problem they own. We have used LinkedIn before, but there is no performance data, so treat this as a test.\n2. **Targeted email outreach** — Proposal: lets us reach the Head of Customer Success directly at a defined list of 100–500 person B2B software companies, and we have used it before. No performance data yet, so we should track replies to compare against LinkedIn.\n\n## Draft email\n\n**Subject:** Who owns the next onboarding handoff?\n\nHi [First name],\n\nWhen a new customer signs, onboarding usually passes between several teams. If those handoffs live in email threads and spreadsheets, steps get missed and nobody is sure who owns what.\n\nHarborDesk gives every team one shared onboarding checklist per customer. Each task has an assigned owner, reminders go out before steps stall, and progress reporting shows where every onboarding stands.\n\nFor a customer success team at a company like [Company], that means a clear owner at every handoff and one view across all active onboardings.\n\nWould a short walkthrough next week be useful? I can show you how a cross-team onboarding would look in HarborDesk.\n\nThanks,\n[Your name]\nHarborDesk\n\n_Draft for review — not sent._\n\n## Assumptions\n\n- At 100–500 person B2B software companies, customer onboarding involves handoffs between several teams (for example sales and customer success).\n- These companies coordinate onboarding mainly through email and spreadsheets, as described in our problem statement.\n- The Head of Customer Success owns onboarding outcomes and is the right first contact as well as the person who signs off.\n- Prospects will respond to an offer of a short walkthrough.\n- LinkedIn and email are proposed because we have used them before, not because they are proven to perform.\n\n## Open questions\n\n- Which teams are typically involved in onboarding handoffs at our target companies, and should the email name them?\n- Does the Head of Customer Success sign off alone, or do other stakeholders join the decision at companies of this size?\n- How will we build the target list of 100–500 person B2B software companies, and how many contacts do we aim for?\n- What does success look like for this campaign (e.g. replies, walkthroughs booked), and over what period?\n- How should we answer prospects who ask about integrations, given none is approved for marketing yet?\n- Who will run the walkthroughs, and how much capacity do we have?\n",
+      "markdown": "# Customer acquisition: coordinating onboarding handoffs across teams\n\n## Audience\n\nB2B software companies with 100–500 employees where customer onboarding passes between several teams and is tracked across email and spreadsheets.\n\n## Buyer\n\nHead of Customer Success.\n\n## Main message\n\nHarborDesk gives every onboarding handoff between teams a clear owner and a shared view of progress, so new customers don't get stuck between email threads and spreadsheets.\n\n## Recommended channels (proposals)\n\n1. **LinkedIn posts** — Proposed because Heads of Customer Success at B2B software companies can be reached there with content about cross-team onboarding handoffs, and we have used it before. No performance data yet, so treat this as a test.\n2. **Targeted email outreach** — Proposed because it lets us speak directly to the Head of Customer Success about a specific handoff problem, and we have used it before. No performance data yet, so results should be tracked from this campaign.\n\n## Draft email\n\n**Subject:** Where do onboarding handoffs get stuck at [Company]?\n\nHi [First name],\n\nAt a growing software company, onboarding a new customer usually involves several teams. When the handoffs between them live in email threads and spreadsheets, steps get missed and nobody is sure who owns what.\n\nHarborDesk keeps cross-team onboarding in one place:\n- Shared onboarding checklists every team works from\n- A named owner for each task, so handoffs are explicit\n- Reminders so steps don't stall between teams\n- Progress reporting so you can see where each customer stands\n\nThe result is clearer ownership and visibility from kickoff onward.\n\nIf onboarding handoffs at [Company] run through email and spreadsheets today, would a short call to walk through how HarborDesk could fit your process be useful?\n\nThanks,\n[Your name]\n[Your title], HarborDesk\n\n_Draft for review — not sent._\n\n## Assumptions\n\n- Onboarding at companies in the target segment involves handoffs between more than one team; which teams are involved is not confirmed.\n- Prospects currently coordinate those handoffs mainly through email and spreadsheets.\n- The Head of Customer Success is both the right first contact and the person who signs off.\n- The campaign aims to book introductory calls; no other goal or target has been set.\n- LinkedIn and targeted email are proposed based on past use, not on evidence that they perform best.\n\n## Open questions\n\n- Which teams are typically involved in onboarding handoffs at these companies, and should the email name them?\n- Does anyone besides the Head of Customer Success need to approve the purchase at companies of this size?\n- What is the campaign goal and target (e.g. number of calls booked), and over what timeframe?\n- Is there a prospect list of Heads of Customer Success at B2B software companies with 100–500 employees, and who will send the emails?\n- Who will publish the LinkedIn posts (founder's profile or company page), and how often?\n- What call to action do we want: an intro call or a product walkthrough?\n- How should we answer prospects who ask about integrations while none are approved to mention?\n- How will we track results by channel so future recommendations can be based on data?\n",
       "campaign": "Customer acquisition"
     }
   ]
