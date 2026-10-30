@@ -10,7 +10,8 @@ from startup_assistant.reply_guard import current_price_claims
         "Plans cost $299/mo.",
         "We charge 299 per month.",
         "Billed at 299/month for everyone.",
-        "It is 299 a month.",
+        "The subscription is 299 a month.",
+        "It's USD 299 monthly.",
         "Costs $ 299 today.",
     ],
 )
@@ -27,6 +28,8 @@ def test_flags_current_prices(text):
         "The old price was $299.",
         "Previously $299/mo.",
         "It is no longer $299 a month.",
+        "We send 4 updates per month.",
+        "Expect 2 check-ins a month.",
     ],
 )
 def test_ignores_past_or_unrelated(text):
