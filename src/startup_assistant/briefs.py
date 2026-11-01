@@ -4,6 +4,9 @@ Each campaign numbers its own versions (v1, v2, ...). Campaign names match case-
 ignoring surrounding whitespace; the name used on a campaign's first save is its display name.
 """
 
+# Lazy annotations (as on 3.14): otherwise `-> list[str]` below resolves to the `list` method.
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from pathlib import Path
 
