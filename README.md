@@ -56,7 +56,7 @@ Everything above this section is the state at the 3-hour cutoff ([`b88619f`](htt
 
    Each browser session runs its own assistant process on the shared data, which is where the file locking added before the cutoff matters.
 
-   Time spent: TODO.
+   Commit: [`af3e946`](https://github.com/thianlopezz/startup-assistant/commit/af3e946). Time spent: TODO.
 
 Status of item 1 (RAG): planned, not yet built.
 
