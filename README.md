@@ -47,7 +47,7 @@ The 3-hour cutoff is at the end of part 2, where the cutoff commit is made and s
 Everything above this section is the state at the 3-hour cutoff ([`b88619f`](https://github.com/thianlopezz/startup-assistant/commit/b88619f)). Two improvements are planned after the cutoff. They will go in separate commits, and this section will be updated with what changed, why, the time spent, and how to reach that version.
 
 1. **RAG integration (retrieval over company material).** Today the assistant sends the whole company knowledge block to the model, which works because HarborDesk's data is a single page. The plan is to index the company knowledge, the founder updates, the marketing notes and the saved briefs, and retrieve only the passages relevant to each request. Answers and briefs would then cite where a fact came from. This keeps the assistant grounded as the material grows (more documents, more campaigns, longer history) without sending everything on every turn. It should also make "known fact vs assumption" easier to check, because each fact would point to its source.
-2. **Web deployment with Docker.** Run the same assistant in a browser so reviewers can try it without installing anything. The plan:
+2. **Web deployment with Docker.** Run the same assistant in a browser so reviewers can try it without installing anything. Status: **built**, see [Deploy to the web (Docker)](#deploy-to-the-web-docker) below.
    - the existing chat interface served as a web terminal (`ttyd`) from a Docker image
    - a persistent volume for the knowledge and brief data
    - an `ANTHROPIC_API_KEY` for model access instead of a personal Claude login
@@ -56,7 +56,35 @@ Everything above this section is the state at the 3-hour cutoff ([`b88619f`](htt
 
    Each browser session runs its own assistant process on the shared data, which is where the file locking added before the cutoff matters.
 
-Status: planned, not yet built.
+   Commit: [`af3e946`](https://github.com/thianlopezz/startup-assistant/commit/af3e946). Time spent: TODO.
+
+Status of item 1 (RAG): planned, not yet built.
+
+One fix that wasn't planned: on Python 3.11–3.13 the app crashed at import (`TypeError: 'function' object is not subscriptable`), because `BriefStore.campaigns() -> list[str]` resolved `list` to the class's own `list` method. 3.14 evaluates annotations lazily, which is why it never showed up here. `briefs.py` now uses `from __future__ import annotations`, and the 197 tests pass on 3.11, 3.13 and 3.14.
+
+### Deploy to the web (Docker)
+
+Runs the assistant in a browser terminal ([ttyd](https://github.com/tsl0922/ttyd)) behind a
+username/password prompt, served at `https://startup-assistant.thianlopezz.com` through an existing
+Traefik (network `proxy`, entrypoint `websecure`, cert resolver `letsencrypt`). On the server:
+
+```bash
+cp .env.example .env        # set ANTHROPIC_API_KEY, ACCESS_USER, ACCESS_PASSWORD
+docker compose up -d --build
+```
+
+- Try it locally first, without Traefik, at `http://localhost:7681`:
+  `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build`.
+- Each browser tab gets its own assistant process with no shell underneath. Typing `exit` ends that
+  session and the page offers to reconnect.
+- All sessions share one data store, the `assistant-data` volume, which survives restarts and rebuilds.
+  Saves take the store file lock, so two people saving at once don't overwrite each other.
+- Start over from the original HarborDesk data: `docker compose down -v && docker compose up -d`.
+- Change the password: edit `.env`, then `docker compose up -d`.
+- Different domain or Traefik names: set `DOMAIN`, `TRAEFIK_NETWORK`, `TRAEFIK_ENTRYPOINT`, `CERT_RESOLVER` in `.env`.
+- Verified locally: the password gate (401 without or with a wrong login), a real question answered
+  through the web terminal, and `exit` ending the session cleanly. Not yet verified behind the real
+  Traefik with a real certificate.
 
 ## What was built, setup and run
 

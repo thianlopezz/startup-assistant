@@ -8,3 +8,4 @@ __pycache__/
 examples/fake-data/
 examples/fake-transcript.md
 *.lock
+.env
