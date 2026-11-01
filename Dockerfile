@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # The assistant in a browser terminal: ttyd serves startup-assistant over HTTP (Traefik adds TLS).
 # 3.14 is the version the app is built and tested on.
 FROM python:3.14-slim-trixie
