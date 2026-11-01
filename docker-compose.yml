@@ -1,0 +1,39 @@
+# Serves the assistant at https://$DOMAIN through the Traefik already running on the server.
+#   cp .env.example .env   # then fill it in
+#   docker compose up -d --build
+# Fixed project name, so the data volume is the same whatever folder this is cloned into.
+name: startup-assistant
+
+services:
+  startup-assistant:
+    build: .
+    image: startup-assistant
+    container_name: startup-assistant
+    restart: unless-stopped
+    init: true
+    networks:
+      - proxy
+    env_file:
+      - .env
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY must be set in .env}
+      ACCESS_USER: ${ACCESS_USER:?ACCESS_USER must be set in .env}
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:?ACCESS_PASSWORD must be set in .env}
+    volumes:
+      - assistant-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-proxy}"
+      - "traefik.http.routers.startup-assistant-secure.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.startup-assistant-secure.rule=Host(`${DOMAIN:-startup-assistant.thianlopezz.com}`)"
+      - "traefik.http.routers.startup-assistant-secure.tls=true"
+      - "traefik.http.routers.startup-assistant-secure.tls.certresolver=${CERT_RESOLVER:-letsencrypt}"
+      - "traefik.http.services.startup-assistant.loadbalancer.server.port=7681"
+
+volumes:
+  assistant-data:
+
+networks:
+  proxy:
+    name: ${TRAEFIK_NETWORK:-proxy}
+    external: true

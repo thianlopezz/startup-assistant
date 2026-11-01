@@ -1,0 +1,7 @@
+# Local test without Traefik: serves the assistant at http://localhost:7681.
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+services:
+  startup-assistant:
+    ports:
+      - "127.0.0.1:7681:7681"
+    networks: !reset []
